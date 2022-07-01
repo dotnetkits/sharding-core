@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -12,16 +13,16 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
     * @Date: Sunday, 15 August 2021 06:49:09
     * @Email: 326308290@qq.com
     */
-    public class MultiOrderStreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
+    internal class MultiOrderStreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
     {
 
-        private readonly StreamMergeContext<T> _mergeContext;
+        private readonly StreamMergeContext _mergeContext;
         private readonly IEnumerable<IStreamMergeAsyncEnumerator<T>> _enumerators;
         private readonly PriorityQueue<IOrderStreamMergeAsyncEnumerator<T>> _queue;
         private IStreamMergeAsyncEnumerator<T> _currentEnumerator;
         private bool skipFirst;
 
-        public MultiOrderStreamMergeAsyncEnumerator(StreamMergeContext<T> mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> enumerators)
+        public MultiOrderStreamMergeAsyncEnumerator(StreamMergeContext mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> enumerators)
         {
             _mergeContext = mergeContext;
             _enumerators = enumerators;
@@ -80,6 +81,30 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
             _currentEnumerator = _queue.Peek();
             return true;
         }
+        public bool MoveNext()
+        {
+            if (_queue.IsEmpty())
+                return false;
+            if (skipFirst)
+            {
+                skipFirst = false;
+                return true;
+            }
+
+            var first = _queue.Poll();
+            if (first.MoveNext())
+            {
+                _queue.Offer(first);
+            }
+
+            if (_queue.IsEmpty())
+            {
+                return false;
+            }
+
+            _currentEnumerator = _queue.Peek();
+            return true;
+        }
 
 
         public bool SkipFirst()
@@ -98,6 +123,10 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
         }
 
         public T ReallyCurrent => _queue.IsEmpty() ? default(T) : _queue.Peek().ReallyCurrent;
+        public T GetCurrent()
+        {
+            return _currentEnumerator.GetCurrent();
+        }
 
 #if !EFCORE2
 
@@ -109,8 +138,17 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
             }
         }
 #endif
-#if EFCORE2
 
+
+
+        public void Reset()
+        {
+            throw new System.NotImplementedException();
+        }
+
+        object IEnumerator.Current => Current;
+
+        public T Current => skipFirst ? default : _currentEnumerator.GetCurrent();
         public void Dispose()
         {
             foreach (var enumerator in _enumerators)
@@ -118,9 +156,5 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
                 enumerator.Dispose();
             }
         }
-#endif
-
-
-        public T Current => skipFirst ? default : _currentEnumerator.Current;
     }
 }

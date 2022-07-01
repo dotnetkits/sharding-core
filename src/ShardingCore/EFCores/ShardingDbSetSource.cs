@@ -12,10 +12,9 @@ namespace ShardingCore.EFCores
     * @Date: Saturday, 14 August 2021 10:17:43
     * @Email: 326308290@qq.com
     */
-#if !EFCORE2
-    public class ShardingDbSetSource:IDbSetSource
+#if EFCORE5 || EFCORE6
+    public class ShardingDbSetSource : IDbSetSource
     {
-#if EFCORE5
 
         private static readonly MethodInfo _genericCreateSet
             = typeof(ShardingDbSetSource).GetTypeInfo().GetDeclaredMethod(nameof(CreateSetFactory));
@@ -51,8 +50,11 @@ namespace ShardingCore.EFCores
         private static Func<DbContext, string, object> CreateSetFactory<TEntity>()
             where TEntity : class
             => (c, name) => new ShardingInternalDbSet<TEntity>(c, name);
+    }
 #endif
 #if EFCORE3
+    public class ShardingDbSetSource:IDbSetSource
+    {
         
         private static readonly MethodInfo _genericCreateSet
             = typeof(ShardingDbSetSource).GetTypeInfo().GetDeclaredMethod(nameof(CreateSetFactory));
@@ -79,8 +81,7 @@ namespace ShardingCore.EFCores
         private static Func<DbContext, object> CreateSetFactory<TEntity>()
             where TEntity : class
             => c => new ShardingInternalDbSet<TEntity>(c);
-#endif
-    }
+}
 #endif
 
 #if EFCORE2
@@ -130,4 +131,5 @@ namespace ShardingCore.EFCores
             => c => new ShardingInternalDbQuery<TQuery>(c);
     }
 #endif
+
 }

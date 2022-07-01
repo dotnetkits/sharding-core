@@ -5,11 +5,14 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using ShardingCore.Core.ShardingAccessors.Abstractions;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
+using Microsoft.Extensions.Logging;
+using ShardingCore.Core.EntityMetadatas;
+using ShardingCore.Core.VirtualDatabase.VirtualTables;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
 using ShardingCore.Core.VirtualTables;
-using ShardingCore.DbContexts.ShardingDbContexts;
+using ShardingCore.Core.DbContextCreator;
 using ShardingCore.Extensions;
+using ShardingCore.Logger;
 using ShardingCore.Sharding.Abstractions;
 using ShardingCore.Utils;
 
@@ -24,27 +27,29 @@ namespace ShardingCore.EFCores
     */
     public class ShardingModelCustomizer<TShardingDbContext> : ModelCustomizer where TShardingDbContext : DbContext, IShardingDbContext
     {
+        private static readonly ILogger<ShardingModelCustomizer<TShardingDbContext>> _logger =
+            InternalLoggerFactory.CreateLogger<ShardingModelCustomizer<TShardingDbContext>>();
         private Type _shardingDbContextType => typeof(TShardingDbContext);
+        private readonly IEntityMetadataManager<TShardingDbContext> _entityMetadataManager;
 
         public ShardingModelCustomizer(ModelCustomizerDependencies dependencies) : base(dependencies)
         {
+            _entityMetadataManager = ShardingContainer.GetService<IEntityMetadataManager<TShardingDbContext>>();
         }
 
         public override void Customize(ModelBuilder modelBuilder, DbContext context)
         {
             base.Customize(modelBuilder, context);
-            if (context is IShardingTableDbContext shardingTableDbContext)
+            if (context is IShardingTableDbContext shardingTableDbContext&& shardingTableDbContext.RouteTail !=null&& shardingTableDbContext.RouteTail.IsShardingTableQuery())
             {
                 var isMultiEntityQuery = shardingTableDbContext.RouteTail.IsMultiEntityQuery();
                 if (!isMultiEntityQuery)
                 {
                     var singleQueryRouteTail = (ISingleQueryRouteTail) shardingTableDbContext.RouteTail;
                     var tail = singleQueryRouteTail.GetTail();
-                    var virtualTableManager = ShardingContainer.Services.GetService<IVirtualTableManager>();
-                    var typeMap = virtualTableManager.GetAllVirtualTables(_shardingDbContextType).Where(o => o.GetTaleAllTails().Contains(tail)).Select(o => o.EntityType).ToHashSet();
 
                     //设置分表
-                    var mutableEntityTypes = modelBuilder.Model.GetEntityTypes().Where(o => o.ClrType.IsShardingTable() && typeMap.Contains(o.ClrType));
+                    var mutableEntityTypes = modelBuilder.Model.GetEntityTypes().Where(o => _entityMetadataManager.IsShardingTable(o.ClrType)).ToArray();
                     foreach (var entityType in mutableEntityTypes)
                     {
                         MappingToTable(entityType.ClrType, modelBuilder, tail);
@@ -54,7 +59,7 @@ namespace ShardingCore.EFCores
                 {
                     var multiQueryRouteTail = (IMultiQueryRouteTail) shardingTableDbContext.RouteTail;
                     var entityTypes = multiQueryRouteTail.GetEntityTypes();
-                    var mutableEntityTypes = modelBuilder.Model.GetEntityTypes().Where(o => o.ClrType.IsShardingTable() && entityTypes.Contains(o.ClrType)).ToArray();
+                    var mutableEntityTypes = modelBuilder.Model.GetEntityTypes().Where(o => _entityMetadataManager.IsShardingTable(o.ClrType) && entityTypes.Contains(o.ClrType)).ToArray();
                     foreach (var entityType in mutableEntityTypes)
                     {
                         var queryTail = multiQueryRouteTail.GetEntityTail(entityType.ClrType);
@@ -69,17 +74,15 @@ namespace ShardingCore.EFCores
 
         private void MappingToTable(Type clrType, ModelBuilder modelBuilder, string tail)
         {
-            var shardingEntityConfig = ShardingKeyUtil.Parse(clrType);
-            var shardingEntity = shardingEntityConfig.ShardingEntityType;
-            var tailPrefix = shardingEntityConfig.TailPrefix;
+            var entityMetadata = _entityMetadataManager.TryGet(clrType);
+            var shardingEntity = entityMetadata.EntityType;
+            var tableSeparator = entityMetadata.TableSeparator;
             var entity = modelBuilder.Entity(shardingEntity);
-            var tableName = shardingEntityConfig.ShardingOriginalTable;
+            var tableName = entityMetadata.VirtualTableName;
             if (string.IsNullOrWhiteSpace(tableName))
                 throw new ArgumentNullException($"{shardingEntity}: not found original table name。");
-#if DEBUG
-            Console.WriteLine($"mapping table :[tableName]-->[{tableName}{tailPrefix}{tail}]");
-#endif
-            entity.ToTable($"{tableName}{tailPrefix}{tail}");
+            _logger.LogDebug($"mapping table :[tableName]-->[{tableName}{tableSeparator}{tail}]");
+            entity.ToTable($"{tableName}{tableSeparator}{tail}");
         }
     }
 }

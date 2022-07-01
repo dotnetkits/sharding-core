@@ -1,24 +1,19 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace ShardingCore.Core.Internal.Visitors.Selects
+namespace ShardingCore.Sharding.Visitors.Selects
 {
-    /*
-    * @Author: xjm
-    * @Description:
-    * @Date: Tuesday, 02 February 2021 08:17:48
-    * @Email: 326308290@qq.com
-    */
     public class SelectProperty
     {
-        public SelectProperty(string propertyName,bool isAggregateMethod,string aggregateMethod)
+        public SelectProperty( PropertyInfo property)
         {
-            PropertyName = propertyName;
-            IsAggregateMethod = isAggregateMethod;
-            AggregateMethod = aggregateMethod;
+            Property = property;
         }
-
-        public string PropertyName { get; }
-        public bool IsAggregateMethod { get; }
-        public string AggregateMethod { get; }
+        public PropertyInfo Property { get; }
+        public string PropertyName => Property.Name;
     }
 }

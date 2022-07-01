@@ -1,31 +1,40 @@
 using System;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using ShardingCore.Core;
-using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.Core.VirtualRoutes.TableRoutes;
+using ShardingCore.Helpers;
 
 namespace ShardingCore.VirtualRoutes.Abstractions
 {
     /*
     * @Author: xjm
-    * @Description:
+    * @Description: sharding table route by time stamp (ms)
     * @Date: Wednesday, 27 January 2021 13:06:01
     * @Email: 326308290@qq.com
     */
-    public abstract class AbstractShardingTimeKeyLongVirtualTableRoute<T> : AbstractShardingOperatorVirtualTableRoute<T, long> where T : class, IShardingTable
+    /// <summary>
+    /// sharding table route by time stamp (ms)
+    /// </summary>
+    /// <typeparam name="TEntity">entity</typeparam>
+    public abstract class AbstractShardingTimeKeyLongVirtualTableRoute<TEntity> : AbstractShardingAutoCreateOperatorVirtualTableRoute<TEntity, long> where TEntity : class
     {
-        protected override long ConvertToShardingKey(object shardingKey)
-        {
-            return (long)shardingKey;
-        }
-
+        /// <summary>
+        /// how convert sharding key to tail
+        /// </summary>
+        /// <param name="shardingKey"></param>
+        /// <returns></returns>
         public override string ShardingKeyToTail(object shardingKey)
         {
-            var time = ConvertToShardingKey(shardingKey);
+            var time = (long)shardingKey;
             return TimeFormatToTail(time);
         }
+        /// <summary>
+        /// how format long time to tail
+        /// </summary>
+        /// <param name="time"></param>
+        /// <returns></returns>
         protected abstract string TimeFormatToTail(long time);
 
+        protected override string ConvertNowToTail(DateTime now)
+        {
+            return ShardingKeyToTail(ShardingCoreHelper.ConvertDateTimeToLong(now));
+        }
     }
 }

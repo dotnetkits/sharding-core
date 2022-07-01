@@ -1,155 +1,173 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
+using ShardingCore.Extensions;
+using ShardingCore.Sharding.Abstractions;
+using ShardingCore.Sharding.ShardingDbContextExecutors;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Abp.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Storage;
-using ShardingCore;
-using ShardingCore.Core;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
-using ShardingCore.Core.VirtualRoutes.TableRoutes;
-using ShardingCore.Core.VirtualTables;
-using ShardingCore.DbContexts;
-using ShardingCore.DbContexts.ShardingDbContexts;
-using ShardingCore.Exceptions;
-using ShardingCore.Extensions;
-using ShardingCore.Sharding.Abstractions;
+using ShardingCore.EFCores.OptionsExtensions;
+using ShardingCore.Helpers;
+using ShardingCore.Utils;
+using Volo.Abp.Domain.Entities;
+using Volo.Abp.EntityFrameworkCore;
+using Volo.Abp.Reflection;
+using ShardingCore.Core.VirtualDatabase.VirtualDataSources;
 
 namespace Samples.AbpSharding
 {
-    public abstract class AbstractShardingAbpDbContext<T> : AbpDbContext, IShardingTableDbContext<T> where T : AbpDbContext, IShardingTableDbContext
+
+    public abstract class AbstractShardingAbpDbContext<TDbContext> : AbpDbContext<TDbContext>, IShardingDbContext, ISupportShardingReadWrite
+                                where TDbContext : DbContext
     {
-
-
-        private readonly ConcurrentDictionary<string, DbContext> _dbContextCaches = new ConcurrentDictionary<string, DbContext>();
-        private readonly IVirtualTableManager _virtualTableManager;
-        private readonly IRouteTailFactory _routeTailFactory;
-        private readonly IShardingDbContextFactory _shardingDbContextFactory;
-        private readonly IShardingDbContextOptionsBuilderConfig _shardingDbContextOptionsBuilderConfig;
-        private DbContextOptions<T> _dbContextOptions;
-
-        private readonly object CREATELOCK = new object();
-
-        public AbstractShardingAbpDbContext(DbContextOptions options) : base(options)
+        private readonly IShardingDbContextExecutor _shardingDbContextExecutor;
+        protected AbstractShardingAbpDbContext(DbContextOptions<TDbContext> options) : base(options)
         {
-            _shardingDbContextFactory = ShardingContainer.GetService<IShardingDbContextFactory>();
-            _virtualTableManager = ShardingContainer.GetService<IVirtualTableManager>();
-            _routeTailFactory = ShardingContainer.GetService<IRouteTailFactory>();
-            _shardingDbContextOptionsBuilderConfig = ShardingContainer
-                .GetService<IEnumerable<IShardingDbContextOptionsBuilderConfig>>()
-                .FirstOrDefault(o => o.ShardingDbContextType == ShardingDbContextType);
-        }
 
-        public abstract Type ShardingDbContextType { get; }
-        public Type ActualDbContextType => typeof(T);
-
-
-        private DbContextOptionsBuilder<T> CreateDbContextOptionBuilder()
-        {
-            Type type = typeof(DbContextOptionsBuilder<>);
-            type = type.MakeGenericType(ActualDbContextType);
-            return (DbContextOptionsBuilder<T>) Activator.CreateInstance(type);
-        }
-
-        private DbContextOptions<T> CreateShareDbContextOptions()
-        {
-            var dbContextOptionBuilder = CreateDbContextOptionBuilder();
-            var dbConnection = Database.GetDbConnection();
-            _shardingDbContextOptionsBuilderConfig.UseDbContextOptionsBuilder(dbConnection, dbContextOptionBuilder);
-            return dbContextOptionBuilder.Options;
-        }
-        private DbContextOptions<T> CreateMonopolyDbContextOptions()
-        {
-            var dbContextOptionBuilder = CreateDbContextOptionBuilder();
-            var connectionString = Database.GetConnectionString();
-            _shardingDbContextOptionsBuilderConfig.UseDbContextOptionsBuilder(connectionString,dbContextOptionBuilder);
-            return dbContextOptionBuilder.Options;
-        }
-
-        private ShardingDbContextOptions GetShareShardingDbContextOptions(IRouteTail routeTail)
-        {
-            if (_dbContextOptions == null)
+            var wrapOptionsExtension = options.FindExtension<ShardingWrapOptionsExtension>();
+            if (wrapOptionsExtension != null)
             {
-                lock (CREATELOCK)
+                _shardingDbContextExecutor =
+                    (IShardingDbContextExecutor)Activator.CreateInstance(
+                        typeof(ShardingDbContextExecutor<>).GetGenericType0(this.GetType()), this);
+            }
+        }
+
+
+        /// <summary>
+        /// 读写分离优先级
+        /// </summary>
+        public int ReadWriteSeparationPriority
+        {
+            get => _shardingDbContextExecutor.ReadWriteSeparationPriority;
+            set => _shardingDbContextExecutor.ReadWriteSeparationPriority = value;
+        }
+        /// <summary>
+        /// 是否使用读写分离
+        /// </summary>
+        public bool ReadWriteSeparation
+        {
+            get => _shardingDbContextExecutor.ReadWriteSeparation;
+            set => _shardingDbContextExecutor.ReadWriteSeparation = value;
+        }
+
+        /// <summary>
+        /// 是否是真正的执行者
+        /// </summary>
+        private bool isExecutor => _shardingDbContextExecutor == null;
+
+        //public void ShardingUpgrade()
+        //{
+        //    //IsExecutor = true;
+        //}
+
+        public DbContext GetDbContext(string dataSourceName, bool parallelQuery, IRouteTail routeTail)
+        {
+            var dbContext = _shardingDbContextExecutor.CreateDbContext(parallelQuery, dataSourceName, routeTail);
+            if (!parallelQuery && dbContext is AbpDbContext<TDbContext> abpDbContext)
+            {
+                abpDbContext.LazyServiceProvider = this.LazyServiceProvider;
+            }
+
+            return dbContext;
+        }
+
+        /// <summary>
+        /// 根据对象创建通用的dbcontext
+        /// </summary>
+        /// <typeparam name="TEntity"></typeparam>
+        /// <param name="entity"></param>
+        /// <returns></returns>
+        public DbContext CreateGenericDbContext<TEntity>(TEntity entity) where TEntity : class
+        {
+            CheckAndSetShardingKeyThatSupportAutoCreate(entity);
+            var dbContext = _shardingDbContextExecutor.CreateGenericDbContext(entity);
+            if (dbContext is AbpDbContext<TDbContext> abpDbContext && abpDbContext.LazyServiceProvider == null)
+            {
+                abpDbContext.LazyServiceProvider = this.LazyServiceProvider;
+            }
+
+            return dbContext;
+        }
+
+
+        private void CheckAndSetShardingKeyThatSupportAutoCreate<TEntity>(TEntity entity) where TEntity : class
+        {
+            if (entity is IShardingKeyIsGuId)
+            {
+
+                if (entity is IEntity<Guid> guidEntity)
                 {
-                    if (_dbContextOptions == null)
+                    if (guidEntity.Id != default)
                     {
-                        _dbContextOptions = CreateShareDbContextOptions();
+                        return;
                     }
+                    var idProperty = entity.GetObjectProperty(nameof(IEntity<Guid>.Id));
+
+                    var dbGeneratedAttr = ReflectionHelper
+                        .GetSingleAttributeOrDefault<DatabaseGeneratedAttribute>(
+                            idProperty
+                        );
+
+                    if (dbGeneratedAttr != null && dbGeneratedAttr.DatabaseGeneratedOption != DatabaseGeneratedOption.None)
+                    {
+                        return;
+                    }
+
+                    EntityHelper.TrySetId(
+                        guidEntity,
+                        () => GuidGenerator.Create(),
+                        true
+                    );
                 }
             }
-
-            return new ShardingDbContextOptions(_dbContextOptions, routeTail);
-        }
-        private ShardingDbContextOptions CetMonopolyShardingDbContextOptions(IRouteTail routeTail)
-        {
-            return new ShardingDbContextOptions(CreateMonopolyDbContextOptions(), routeTail);
-        }
-
-
-        public DbContext GetDbContext(bool track, IRouteTail routeTail)
-        {
-            if (track)
+            else if (entity is IShardingKeyIsCreationTime)
             {
-                if (routeTail.IsMultiEntityQuery())
-                    throw new ShardingCoreException("multi route not support track");
-                if(!(routeTail is ISingleQueryRouteTail singleQueryRouteTail))
-                    throw new ShardingCoreException("multi route not support track");
-                var cacheKey = routeTail.GetRouteTailIdenty();
-                if (!_dbContextCaches.TryGetValue(cacheKey, out var dbContext))
-                {
-                    dbContext = _shardingDbContextFactory.Create(ShardingDbContextType, GetShareShardingDbContextOptions(routeTail));
-                    _dbContextCaches.TryAdd(cacheKey, dbContext);
-                }
-
-                return dbContext;
-            }
-            else
-            {
-                return _shardingDbContextFactory.Create(ShardingDbContextType, CetMonopolyShardingDbContextOptions(routeTail));
+                AuditPropertySetter?.SetCreationProperties(entity);
             }
         }
 
-        public bool IsBeginTransaction => Database.CurrentTransaction != null;
 
-        public DbContext CreateGenericDbContext<T>(T entity) where T : class
-        {
-            var tail = string.Empty;
-            if (entity.IsShardingTable())
-            {
-                var physicTable = _virtualTableManager.GetVirtualTable(ShardingDbContextType, entity.GetType()).RouteTo(new TableRouteConfig(null, entity as IShardingTable, null))[0];
-                tail = physicTable.Tail;
-            }
-
-            return GetDbContext(true, _routeTailFactory.Create(tail));
-        }
         public override EntityEntry Add(object entity)
         {
+            if (isExecutor)
+                base.Add(entity);
             return CreateGenericDbContext(entity).Add(entity);
         }
 
         public override EntityEntry<TEntity> Add<TEntity>(TEntity entity)
         {
+            if (isExecutor)
+                return base.Add(entity);
             return CreateGenericDbContext(entity).Add(entity);
         }
 
 
         public override ValueTask<EntityEntry<TEntity>> AddAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = new CancellationToken())
         {
+            if (isExecutor)
+                return base.AddAsync(entity, cancellationToken);
             return CreateGenericDbContext(entity).AddAsync(entity, cancellationToken);
         }
 
         public override ValueTask<EntityEntry> AddAsync(object entity, CancellationToken cancellationToken = new CancellationToken())
         {
+            if (isExecutor)
+                return base.AddAsync(entity, cancellationToken);
             return CreateGenericDbContext(entity).AddAsync(entity, cancellationToken);
         }
 
         public override void AddRange(params object[] entities)
         {
+            if (isExecutor)
+            {
+                base.AddRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -165,9 +183,13 @@ namespace Samples.AbpSharding
                 group.Key.AddRange(group.Select(o => o.Entity));
             }
         }
-
         public override void AddRange(IEnumerable<object> entities)
         {
+            if (isExecutor)
+            {
+                base.AddRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -186,6 +208,11 @@ namespace Samples.AbpSharding
 
         public override async Task AddRangeAsync(params object[] entities)
         {
+            if (isExecutor)
+            {
+                await base.AddRangeAsync(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -204,6 +231,11 @@ namespace Samples.AbpSharding
 
         public override async Task AddRangeAsync(IEnumerable<object> entities, CancellationToken cancellationToken = new CancellationToken())
         {
+            if (isExecutor)
+            {
+                await base.AddRangeAsync(entities, cancellationToken);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -222,16 +254,25 @@ namespace Samples.AbpSharding
 
         public override EntityEntry<TEntity> Attach<TEntity>(TEntity entity)
         {
+            if (isExecutor)
+                return base.Attach(entity);
             return CreateGenericDbContext(entity).Attach(entity);
         }
 
         public override EntityEntry Attach(object entity)
         {
+            if (isExecutor)
+                return base.Attach(entity);
             return CreateGenericDbContext(entity).Attach(entity);
         }
 
         public override void AttachRange(params object[] entities)
         {
+            if (isExecutor)
+            {
+                base.AttachRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -250,6 +291,11 @@ namespace Samples.AbpSharding
 
         public override void AttachRange(IEnumerable<object> entities)
         {
+            if (isExecutor)
+            {
+                base.AttachRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -273,26 +319,39 @@ namespace Samples.AbpSharding
 
         public override EntityEntry<TEntity> Entry<TEntity>(TEntity entity)
         {
+            if (isExecutor)
+                return base.Entry(entity);
             return CreateGenericDbContext(entity).Entry(entity);
         }
 
         public override EntityEntry Entry(object entity)
         {
+            if (isExecutor)
+                return base.Entry(entity);
             return CreateGenericDbContext(entity).Entry(entity);
         }
 
         public override EntityEntry<TEntity> Update<TEntity>(TEntity entity)
         {
+            if (isExecutor)
+                return base.Update(entity);
             return CreateGenericDbContext(entity).Update(entity);
         }
 
         public override EntityEntry Update(object entity)
         {
+            if (isExecutor)
+                return base.Update(entity);
             return CreateGenericDbContext(entity).Update(entity);
         }
 
         public override void UpdateRange(params object[] entities)
         {
+            if (isExecutor)
+            {
+                base.UpdateRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -311,6 +370,11 @@ namespace Samples.AbpSharding
 
         public override void UpdateRange(IEnumerable<object> entities)
         {
+            if (isExecutor)
+            {
+                base.UpdateRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -329,16 +393,25 @@ namespace Samples.AbpSharding
 
         public override EntityEntry<TEntity> Remove<TEntity>(TEntity entity)
         {
+            if (isExecutor)
+                return base.Remove(entity);
             return CreateGenericDbContext(entity).Remove(entity);
         }
 
         public override EntityEntry Remove(object entity)
         {
+            if (isExecutor)
+                return base.Remove(entity);
             return CreateGenericDbContext(entity).Remove(entity);
         }
 
         public override void RemoveRange(params object[] entities)
         {
+            if (isExecutor)
+            {
+                base.RemoveRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -357,6 +430,11 @@ namespace Samples.AbpSharding
 
         public override void RemoveRange(IEnumerable<object> entities)
         {
+            if (isExecutor)
+            {
+                base.RemoveRange(entities);
+                return;
+            }
             var groups = entities.Select(o =>
             {
                 var dbContext = CreateGenericDbContext(o);
@@ -375,191 +453,124 @@ namespace Samples.AbpSharding
 
         public override int SaveChanges()
         {
-            var isBeginTransaction = IsBeginTransaction;
-            //如果是内部开的事务就内部自己消化
-            if (!isBeginTransaction)
-            {
-                Database.BeginTransaction();
-            }
 
-            int i = 0;
-
-            try
-            {
-                foreach (var dbContextCache in _dbContextCaches)
-                {
-                    dbContextCache.Value.Database.UseTransaction(Database.CurrentTransaction.GetDbTransaction());
-                    i += dbContextCache.Value.SaveChanges();
-                }
-
-                if (!isBeginTransaction)
-                    Database.CurrentTransaction.Commit();
-            }
-            finally
-            {
-                if (!isBeginTransaction)
-                {
-                    Database.CurrentTransaction?.Dispose();
-                    foreach (var dbContextCache in _dbContextCaches)
-                    {
-                        dbContextCache.Value.Database.UseTransaction(null);
-                    }
-                }
-            }
-
-            return i;
+            if (isExecutor)
+                return base.SaveChanges();
+            return this.SaveChanges(true);
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
-            var isBeginTransaction = IsBeginTransaction;
-            //如果是内部开的事务就内部自己消化
-            if (!isBeginTransaction)
-            {
-                Database.BeginTransaction();
-            }
-
+            if (isExecutor)
+                return base.SaveChanges(acceptAllChangesOnSuccess);
+            //ApplyShardingConcepts();
             int i = 0;
-
-            try
+            //如果是内部开的事务就内部自己消化
+            if (Database.CurrentTransaction == null && _shardingDbContextExecutor.IsMultiDbContext)
             {
-                foreach (var dbContextCache in _dbContextCaches)
+                using (var tran = Database.BeginTransaction())
                 {
-                    dbContextCache.Value.Database.UseTransaction(Database.CurrentTransaction.GetDbTransaction());
-                    i += dbContextCache.Value.SaveChanges(acceptAllChangesOnSuccess);
+                    i = _shardingDbContextExecutor.SaveChanges(acceptAllChangesOnSuccess);
+                    tran.Commit();
                 }
-
-                if (!isBeginTransaction)
-                    Database.CurrentTransaction.Commit();
             }
-            finally
+            else
             {
-                if (!isBeginTransaction)
-                {
-                    Database.CurrentTransaction?.Dispose();
-                    foreach (var dbContextCache in _dbContextCaches)
-                    {
-                        dbContextCache.Value.Database.UseTransaction(null);
-                    }
-                }
+                i = _shardingDbContextExecutor.SaveChanges(acceptAllChangesOnSuccess);
             }
 
             return i;
         }
 
 
-        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = new CancellationToken())
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = new CancellationToken())
         {
-            var isBeginTransaction = IsBeginTransaction;
-            //如果是内部开的事务就内部自己消化
-            if (!isBeginTransaction)
-            {
-                await Database.BeginTransactionAsync(cancellationToken);
-            }
-
-            int i = 0;
-
-            try
-            {
-                foreach (var dbContextCache in _dbContextCaches)
-                {
-                    await dbContextCache.Value.Database.UseTransactionAsync(Database.CurrentTransaction.GetDbTransaction(), cancellationToken: cancellationToken);
-                    i += await dbContextCache.Value.SaveChangesAsync(cancellationToken);
-                }
-
-                if (!isBeginTransaction)
-                    await Database.CurrentTransaction.CommitAsync(cancellationToken);
-            }
-            finally
-            {
-                if (!isBeginTransaction)
-                {
-                }
-
-                if (Database.CurrentTransaction != null)
-                {
-                    await Database.CurrentTransaction.DisposeAsync();
-                    foreach (var dbContextCache in _dbContextCaches)
-                    {
-                        await dbContextCache.Value.Database.UseTransactionAsync(null, cancellationToken: cancellationToken);
-                    }
-                }
-            }
-
-            return i;
+            if (isExecutor)
+                return base.SaveChangesAsync(cancellationToken);
+            return this.SaveChangesAsync(true, cancellationToken);
         }
 
         public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = new CancellationToken())
         {
-            var isBeginTransaction = IsBeginTransaction;
-            //如果是内部开的事务就内部自己消化
-            if (!isBeginTransaction)
-            {
-                await Database.BeginTransactionAsync(cancellationToken);
-            }
-
+            if (isExecutor)
+                return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            //ApplyShardingConcepts();
             int i = 0;
-
-            try
+            //如果是内部开的事务就内部自己消化
+            if (Database.CurrentTransaction == null && _shardingDbContextExecutor.IsMultiDbContext)
             {
-                foreach (var dbContextCache in _dbContextCaches)
+                using (var tran = await Database.BeginTransactionAsync(cancellationToken))
                 {
-                    await dbContextCache.Value.Database.UseTransactionAsync(Database.CurrentTransaction.GetDbTransaction(), cancellationToken: cancellationToken);
-                    i += await dbContextCache.Value.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+                    i = await _shardingDbContextExecutor.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+                    await tran.CommitAsync(cancellationToken);
                 }
-
-                if (!isBeginTransaction)
-                    await Database.CurrentTransaction.CommitAsync(cancellationToken);
             }
-            finally
+            else
             {
-                if (!isBeginTransaction)
-                    if (Database.CurrentTransaction != null)
-                    {
-                        await Database.CurrentTransaction.DisposeAsync();
-
-                        foreach (var dbContextCache in _dbContextCaches)
-                        {
-                            await dbContextCache.Value.Database.UseTransactionAsync(null, cancellationToken: cancellationToken);
-                        }
-                    }
+                i = await _shardingDbContextExecutor.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             }
+
 
             return i;
         }
 
         public override void Dispose()
         {
-            foreach (var dbContextCache in _dbContextCaches)
-            {
-                try
-                {
-                    dbContextCache.Value.Dispose();
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                }
-            }
 
-            base.Dispose();
+            if (isExecutor)
+            {
+                base.Dispose();
+            }
+            else
+            {
+                _shardingDbContextExecutor.Dispose();
+                base.Dispose();
+            }
         }
 
         public override async ValueTask DisposeAsync()
         {
-            foreach (var dbContextCache in _dbContextCaches)
+            if (isExecutor)
             {
-                try
-                {
-                    await dbContextCache.Value.DisposeAsync();
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                }
+                await base.DisposeAsync();
             }
+            else
+            {
+                await _shardingDbContextExecutor.DisposeAsync();
 
-            await base.DisposeAsync();
+                await base.DisposeAsync();
+            }
         }
+        public Task RollbackAsync(CancellationToken cancellationToken = new CancellationToken())
+        {
+            return _shardingDbContextExecutor.RollbackAsync(cancellationToken);
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = new CancellationToken())
+        {
+            return _shardingDbContextExecutor.CommitAsync(cancellationToken);
+        }
+
+        public void NotifyShardingTransaction()
+        {
+            _shardingDbContextExecutor.NotifyShardingTransaction();
+        }
+
+        public void Rollback()
+        {
+            _shardingDbContextExecutor.Rollback();
+        }
+
+        public void Commit()
+        {
+            _shardingDbContextExecutor.Commit();
+        }
+
+        public IVirtualDataSource GetVirtualDataSource()
+        {
+            return _shardingDbContextExecutor.GetVirtualDataSource();
+        }
+
     }
 }

@@ -6,48 +6,126 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Sample.SqlServer.DbContexts;
 using Sample.SqlServer.Shardings;
+using Sample.SqlServer.UnionAllMerge;
 using ShardingCore;
+using ShardingCore.TableExists;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ShardingCore.Core.DbContextCreator;
+using ShardingCore.EFCores.OptionsExtensions;
+using ShardingCore.Helpers;
+using ShardingCore.Sharding.ReadWriteConfigurations;
+using ShardingCore.Sharding.ShardingComparision;
+using ShardingCore.Sharding.ShardingComparision.Abstractions;
 
 namespace Sample.SqlServer
 {
+    public static class SEX
+    {
+    }
     public class Startup
     {
-        public static readonly ILoggerFactory efLogger = LoggerFactory.Create(builder =>
-        {
-            builder.AddFilter((category, level) => category == DbLoggerCategory.Database.Command.Name && level == LogLevel.Information).AddConsole();
-        });
+
+        //public static readonly ILoggerFactory efLogger = LoggerFactory.Create(builder =>
+        //{
+        //    builder.AddFilter((category, level) => category == DbLoggerCategory.Database.Command.Name && level == LogLevel.Information).AddConsole();
+        //});
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
+    
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
             //services.AddDbContext<DefaultTableDbContext>(o => o.UseSqlServer("Data Source=localhost;Initial Catalog=ShardingCoreDBxx3;Integrated Security=True"));
 
-
-            services.AddShardingDbContext<DefaultShardingDbContext, DefaultTableDbContext>(
-                o => o.UseSqlServer("Data Source=localhost;Initial Catalog=ShardingCoreDBxx2;Integrated Security=True;")
-                , op =>
-                 {
-                     op.EnsureCreatedWithOutShardingTable = true;
-                     op.CreateShardingTableOnStart = true;
-                     op.UseShardingOptionsBuilder(
-                         (connection, builder) => builder.UseSqlServer(connection).UseLoggerFactory(efLogger),//使用dbconnection创建dbcontext支持事务
-                         (conStr,builder) => builder.UseSqlServer(conStr).UseLoggerFactory(efLogger));//使用链接字符串创建dbcontext
-                     op.AddShardingTableRoute<SysUserModVirtualTableRoute>();
-                 });
-            ////不支持MARS不支持追踪的
-            //services.AddShardingDbContext<DefaultShardingDbContext, DefaultTableDbContext>(o => o.UseSqlServer("Data Source=localhost;Initial Catalog=ShardingCoreDBxx2;Integrated Security=True;")
-            //    , op =>
+            services.AddShardingDbContext<DefaultShardingDbContext>()
+                .AddEntityConfig(o =>
+                {
+                    o.ThrowIfQueryRouteNotMatch = false;
+                    o.CreateShardingTableOnStart = true;
+                    o.EnsureCreatedWithOutShardingTable = true;
+                    o.AddShardingTableRoute<SysUserModVirtualTableRoute>();
+                    o.AddShardingTableRoute<SysUserSalaryVirtualTableRoute>();
+                    o.AddShardingTableRoute<TestYearShardingVirtualTableRoute>();
+                })
+                .AddConfig(op =>
+                {
+                    op.ConfigId = "c1";
+                    op.MaxQueryConnectionsLimit = 5;
+                    op.UseSqlServer(builder =>
+                    {
+                        var loggerFactory = ShardingContainer.GetService<ILoggerFactory>();
+                        builder.UseLoggerFactory(loggerFactory).UseUnionAllMerge<DefaultShardingDbContext>();
+                    });
+                    op.ReplaceTableEnsureManager(sp => new SqlServerTableEnsureManager<DefaultShardingDbContext>());
+                    op.AddDefaultDataSource("A",
+                      "Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"
+                     );
+                    op.AddReadWriteNodeSeparation(sp =>new Dictionary<string, IEnumerable<ReadNode>>()
+                    {
+                        {"A",new List<ReadNode>()
+                        {
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A2","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A3","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A4","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A5","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A6","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("A1","Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;"),
+                            new ReadNode("X","Data Source=localhost;Initial Catalog=ShardingCoreDBXA123;Integrated Security=True;"),
+                        }}
+                    },ReadStrategyEnum.Loop);
+                }).EnsureConfig();
+            //services.AddShardingDbContext<DefaultShardingDbContext1>(
+            //        (conn, o) =>
+            //            o.UseSqlServer(conn).UseLoggerFactory(efLogger)
+            //    ).Begin(o =>
             //    {
-            //        op.EnsureCreatedWithOutShardingTable = true;
-            //        op.CreateShardingTableOnStart = true;
-            //        //不支持mars额外加一条字符串的
-            //        op.UseShardingOptionsBuilder(
-            //            (connection, builder) => builder.UseSqlServer(connection).UseLoggerFactory(efLogger),
-            //            (connString, builder) => builder.UseSqlServer(connString).UseLoggerFactory(efLogger));
+            //        o.CreateShardingTableOnStart = true;
+            //        o.EnsureCreatedWithOutShardingTable = true;
+            //        o.AutoTrackEntity = true;
+            //        o.MaxQueryConnectionsLimit = Environment.ProcessorCount;
+            //        o.ConnectionMode = ConnectionModeEnum.SYSTEM_AUTO;
+            //        //if SysTest entity not exists in db and db is exists
+            //        //o.AddEntityTryCreateTable<SysTest>(); // or `o.AddEntitiesTryCreateTable(typeof(SysTest));`
+            //    })
+            //    //.AddShardingQuery((conStr, builder) => builder.UseSqlServer(conStr).UseLoggerFactory(efLogger))//无需添加.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking) 并发查询系统会自动添加NoTracking
+            //    .AddShardingTransaction((connection, builder) =>
+            //        builder.UseSqlServer(connection).UseLoggerFactory(efLogger))
+            //    .AddDefaultDataSource("A",
+            //        "Data Source=localhost;Initial Catalog=ShardingCoreDBXA;Integrated Security=True;")
+            //    .AddShardingTableRoute(o =>
+            //    {
+            //    }).End();
 
-            //        op.AddShardingTableRoute<SysUserModVirtualTableRoute>();
-            //    });
+            services.AddHealthChecks().AddDbContextCheck<DefaultShardingDbContext>();
+            //services.Replace(ServiceDescriptor.Singleton<IDbContextCreator<DefaultShardingDbContext>, ActivatorDbContextCreator<DefaultShardingDbContext>>());
+            //services.AddShardingDbContext<DefaultShardingDbContext, DefaultTableDbContext>(
+            //    o => o.UseSqlServer("Data Source=localhost;Initial Catalog=ShardingCoreDB;Integrated Security=True;")
+            //    , op =>
+            //     {
+            //         op.EnsureCreatedWithOutShardingTable = true;
+            //         op.CreateShardingTableOnStart = true;
+            //         op.UseShardingOptionsBuilder(
+            //             (connection, builder) => builder.UseSqlServer(connection).UseLoggerFactory(efLogger),//使用dbconnection创建dbcontext支持事务
+            //             (conStr,builder) => builder.UseSqlServer(conStr).UseLoggerFactory(efLogger).UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+            //                 //.ReplaceService<IQueryTranslationPostprocessorFactory,SqlServer2008QueryTranslationPostprocessorFactory>()//支持sqlserver2008r2
+            //                 );//使用链接字符串创建dbcontext
+            //         //op.UseReadWriteConfiguration(sp => new List<string>()
+            //         //{
+            //         //    "Data Source=localhost;Initial Catalog=ShardingCoreDB1;Integrated Security=True;",
+            //         //    "Data Source=localhost;Initial Catalog=ShardingCoreDB2;Integrated Security=True;"
+            //         //}, ReadStrategyEnum.Random);
+            //         op.AddShardingTableRoute<SysUserModVirtualTableRoute>();
+            //         op.AddShardingTableRoute<SysUserSalaryVirtualTableRoute>();
+            //     });
+
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -58,11 +136,16 @@ namespace Sample.SqlServer
                 app.UseDeveloperExceptionPage();
             }
 
-            app.UseShardingCore();
 
+            var startNew = Stopwatch.StartNew();
+            startNew.Start();
+            app.UseShardingCore();
+            startNew.Stop();
+            Console.WriteLine($"UseShardingCore:" + startNew.ElapsedMilliseconds + "ms");
             app.UseRouting();
 
             app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
+            DynamicShardingHelper.DynamicAppendDataSource<DefaultShardingDbContext>("c1","B", "Data Source=localhost;Initial Catalog=ShardingCoreDBXAABB;Integrated Security=True;");
             app.DbSeed();
         }
     }

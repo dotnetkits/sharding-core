@@ -5,21 +5,18 @@ using System.Linq.Expressions;
 using System.Threading.Tasks;
 using Sample.SqlServer.Domain.Entities;
 using ShardingCore.Core;
+using ShardingCore.Core.EntityMetadatas;
 using ShardingCore.Core.VirtualRoutes;
 using ShardingCore.Core.VirtualRoutes.TableRoutes;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.Abstractions;
 
 namespace Sample.SqlServer.Shardings
 {
     public class TestVRoute : AbstractShardingOperatorVirtualTableRoute<SysUserMod, string> 
     {
-        protected override string ConvertToShardingKey(object shardingKey)
-        {
-            return shardingKey.ToString();
-        }
-
         public override string ShardingKeyToTail(object shardingKey)
         {
-            throw new NotImplementedException();
+            return shardingKey.ToString();
         }
 
         //数据库已经存在的tail
@@ -28,7 +25,12 @@ namespace Sample.SqlServer.Shardings
             return new List<string>() {"", "1"};
         }
 
-        protected override Expression<Func<string, bool>> GetRouteToFilter(string shardingKey, ShardingOperatorEnum shardingOperator)
+        public override void Configure(EntityMetadataTableBuilder<SysUserMod> builder)
+        {
+            
+        }
+
+        public override Func<string, bool> GetRouteToFilter(string shardingKey, ShardingOperatorEnum shardingOperator)
         {
             var t = ShardingKeyToTail(shardingKey);
             switch (shardingOperator)

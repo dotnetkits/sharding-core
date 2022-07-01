@@ -1,31 +1,37 @@
+using ShardingCore.Core.EntityMetadatas;
+using ShardingCore.Core.PhysicTables;
+using ShardingCore.Core.VirtualDatabase.VirtualDataSources;
+using ShardingCore.Core.VirtualDatabase.VirtualTables;
+using ShardingCore.Core.VirtualRoutes;
+using ShardingCore.Extensions;
+using ShardingCore.Helpers;
+using ShardingCore.TableCreator;
+using ShardingCore.VirtualRoutes.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
-using ShardingCore.Core;
-using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.Helpers;
-using ShardingCore.VirtualRoutes.Abstractions;
 
 namespace ShardingCore.VirtualRoutes.Weeks
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Wednesday, 27 January 2021 13:12:50
-* @Email: 326308290@qq.com
-*/
-    public abstract class AbstractSimpleShardingWeekKeyLongVirtualTableRoute<T> : AbstractShardingTimeKeyLongVirtualTableRoute<T> where T : class, IShardingTable
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Wednesday, 27 January 2021 13:12:50
+    * @Email: 326308290@qq.com
+    */
+    public abstract class AbstractSimpleShardingWeekKeyLongVirtualTableRoute<TEntity> : AbstractShardingTimeKeyLongVirtualTableRoute<TEntity> where TEntity : class
     {
+
         public abstract DateTime GetBeginTime();
         public override List<string> GetAllTails()
         {
-            var beginTime = GetBeginTime();
-         
+            var beginTime = ShardingCoreHelper.GetCurrentMonday(GetBeginTime()).Date;
+
             var tails=new List<string>();
             //提前创建表
-            var nowTimeStamp =beginTime.AddDays(7).Date;
+            var nowTimeStamp = DateTime.Now.Date;
             if (beginTime > nowTimeStamp)
-                throw new ArgumentException("起始时间不正确无法生成正确的表名");
+                throw new ArgumentException("begin time error");
             var currentTimeStamp = beginTime;
             while (currentTimeStamp <= nowTimeStamp)
             {
@@ -44,7 +50,7 @@ namespace ShardingCore.VirtualRoutes.Weeks
             return $"{currentMonday:yyyyMM}{currentMonday:dd}_{currentSunday:dd}";
         }
 
-        protected override Expression<Func<string, bool>> GetRouteToFilter(long shardingKey, ShardingOperatorEnum shardingOperator)
+        public override Func<string, bool> GetRouteToFilter(long shardingKey, ShardingOperatorEnum shardingOperator)
         {
             var t = TimeFormatToTail(shardingKey);
             switch (shardingOperator)
@@ -72,6 +78,15 @@ namespace ShardingCore.VirtualRoutes.Weeks
                     return tail => true;
                 }
             }
+        }
+        public override string[] GetCronExpressions()
+        {
+            return new[]
+            {
+                "0 59 23 ? * 1",
+                "0 0 0 ? * 2",
+                "0 1 0 ? * 2",
+            };
         }
     }
 }

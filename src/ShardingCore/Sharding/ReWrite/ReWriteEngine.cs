@@ -1,8 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
+using ShardingCore.Core.EntityMetadatas;
 using ShardingCore.Core.Internal.Visitors;
+using ShardingCore.Exceptions;
 using ShardingCore.Extensions;
+using ShardingCore.Extensions.InternalExtensions;
+using ShardingCore.Sharding.MergeContexts;
+using ShardingCore.Sharding.Visitors.Selects;
 
 namespace ShardingCore.Core.Internal.StreamMerge.ReWrite
 {
@@ -32,31 +38,40 @@ namespace ShardingCore.Core.Internal.StreamMerge.ReWrite
             var reWriteQueryable = _queryable;
             if (take.HasValue)
             {
-                reWriteQueryable = _queryable.RemoveTake();
-            }
-            if (skip.HasValue)
-            {
-                reWriteQueryable = _queryable.RemoveSkip();
+                reWriteQueryable = reWriteQueryable.RemoveTake().As<IQueryable<T>>();
             }
 
-            
+            if (skip.HasValue)
+            {
+                reWriteQueryable = reWriteQueryable.RemoveSkip().As<IQueryable<T>>();
+            }
+
             if (take.HasValue)
-                reWriteQueryable = reWriteQueryable.Take(take.Value + skip.GetValueOrDefault());
+            {
+                if (skip.HasValue)
+                {
+                    reWriteQueryable = reWriteQueryable.Skip(0).Take(take.Value + skip.GetValueOrDefault());
+                }
+                else
+                {
+                    reWriteQueryable = reWriteQueryable.Take(take.Value + skip.GetValueOrDefault());
+                }
+            }
             //包含group by
             if (extraEntry.GroupByContext.GroupExpression != null)
             {
                 if (orders.IsEmpty())
                 {
                     //将查询的属性转换成order by
-                    var selectProperties = extraEntry.SelectContext.SelectProperties.Where(o => !o.IsAggregateMethod);
+                    var selectProperties = extraEntry.SelectContext.SelectProperties.Where(o => !(o is SelectAggregateProperty));
                     if (selectProperties.IsNotEmpty())
                     {
                         var sort = string.Join(",",selectProperties.Select(o=>$"{o.PropertyName} asc"));
-                        reWriteQueryable = reWriteQueryable.OrderWithExpression(sort);
+                        reWriteQueryable = reWriteQueryable.OrderWithExpression(sort,null);
                         var reWriteOrders = new List<PropertyOrder>(selectProperties.Count());
                         foreach (var orderProperty in selectProperties)
                         {
-                            reWriteOrders.Add(new PropertyOrder(orderProperty.PropertyName,true));
+                            reWriteOrders.Add(new PropertyOrder(orderProperty.PropertyName,true, orderProperty.OwnerType));
                         }
                         orders = reWriteOrders;
                     }
@@ -64,16 +79,16 @@ namespace ShardingCore.Core.Internal.StreamMerge.ReWrite
                 else
                 {
                     //将查询的属性转换成order by 并且order和select的未聚合查询必须一致
-                    var selectProperties = extraEntry.SelectContext.SelectProperties.Where(o => !o.IsAggregateMethod);
+                    var selectProperties = extraEntry.SelectContext.SelectProperties.Where(o => !(o is SelectAggregateProperty));
 
                     if (orders.Count() != selectProperties.Count())
-                        throw new InvalidOperationException("group by query order items not equal select un-aggregate items");
+                        throw new ShardingCoreInvalidOperationException("group by query order items not equal select un-aggregate items");
                     var os=orders.Select(o => o.PropertyExpression).ToList();
                     var ss = selectProperties.Select(o => o.PropertyName).ToList();
                     for (int i = 0; i < os.Count(); i++)
                     {
                         if(!os[i].Equals(ss[i]))
-                            throw new InvalidOperationException($"group by query order items not equal select un-aggregate items: order:[{os[i]}],select:[{ss[i]}");
+                            throw new ShardingCoreInvalidOperationException($"group by query order items not equal select un-aggregate items: order:[{os[i]}],select:[{ss[i]}");
                     }
                 }
             }

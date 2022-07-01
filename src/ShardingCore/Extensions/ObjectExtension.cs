@@ -46,7 +46,7 @@ namespace ShardingCore.Extensions
             var property = obj.GetType().GetProperty(propertyName, _bindingFlags);
             if (property != null)
             {
-                return obj.GetType().GetProperty(propertyName, _bindingFlags)?.GetValue(obj);
+                return property.GetValue(obj);
             }
             else
             {
@@ -65,12 +65,38 @@ namespace ShardingCore.Extensions
             var property=type.GetProperty(propertyName, _bindingFlags);
             if (property != null)
             {
-                return type.GetProperty(propertyName, _bindingFlags)?.GetValue(obj);
+                return property.GetValue(obj);
             }
             else
             {
                 return null;
             }
+        }
+        public static PropertyInfo GetObjectProperty(this object obj, string propertyName)
+        {
+            return obj.GetType().GetProperty(propertyName, _bindingFlags);
+        }
+        /// <summary>
+        /// 类型X是否包含某个属性
+        /// </summary>
+        /// <param name="type"></param>
+        /// <param name="propertyName"></param>
+        /// <returns></returns>
+        public static bool ContainPropertyName(this Type type, string propertyName)
+        {
+            var property = type.GetProperty(propertyName, _bindingFlags);
+            return property != null;
+        }
+
+
+
+        public static Type GetGenericType0(this Type genericType,Type arg0Type)
+        {
+            return genericType.MakeGenericType(arg0Type);
+        }
+        public static Type GetGenericType1(this Type genericType,Type arg0Type, Type arg1Type)
+        {
+            return genericType.MakeGenericType(arg0Type, arg1Type);
         }
 
     }

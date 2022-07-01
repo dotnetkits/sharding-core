@@ -6,21 +6,34 @@
         <Version>$(EFCORE3)</Version>
         <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
         <DefineConstants>TRACE;DEBUG;EFCORE3;</DefineConstants>
-        <LangVersion>8.0</LangVersion>
+		<LangVersion>9.0</LangVersion>
         <AssemblyName>ShardingCore</AssemblyName>
         <RootNamespace>ShardingCore</RootNamespace>
+	    <RepositoryUrl>https://github.com/xuejmnet/sharding-core</RepositoryUrl>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <DocumentationFile>bin\Release\ShardingCore.3x.xml</DocumentationFile>
     </PropertyGroup>
+	<ItemGroup>
+		<None Include="..\..\Logo\logo.png">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+	</ItemGroup>
 
 
     <ItemGroup>
         <Compile Include="..\..\src\ShardingCore\**\*.cs" />
         <Compile Remove="..\..\src\ShardingCore\obj\**" />
         <Compile Remove="..\..\src\ShardingCore\bin\**" />
+        <Compile Update="..\..\src\ShardingCore\Sharding\ShardingExecutors\CompileParameter.cs">
+          <Link>Sharding\ShardingExecutors\CompileParameter.cs</Link>
+        </Compile>
+        <Compile Update="..\..\src\ShardingCore\Sharding\ShardingExecutors\CustomerQueryScope.cs">
+          <Link>Sharding\ShardingExecutors\CustomerQueryScope.cs</Link>
+        </Compile>
     </ItemGroup>
 
 
@@ -28,8 +41,8 @@
       <Compile Remove="..\..\src\ShardingCore\ShardingTableConfig.cs" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="3.1.18" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="3.1.18" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="3.1.26" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="3.1.26" />
     </ItemGroup>
 
 </Project>

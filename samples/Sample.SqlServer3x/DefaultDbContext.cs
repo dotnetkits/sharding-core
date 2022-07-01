@@ -1,7 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.Extensions.DependencyInjection;
 using Sample.SqlServer3x.Domain.Maps;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
-using ShardingCore.DbContexts.ShardingDbContexts;
+using ShardingCore.Core.DbContextCreator;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
+using ShardingCore.Sharding;
 using ShardingCore.Sharding.Abstractions;
 
 namespace Sample.SqlServer3x
@@ -13,17 +17,49 @@ namespace Sample.SqlServer3x
     * @Ver: 1.0
     * @Email: 326308290@qq.com
     */
-    public class DefaultDbContext : DbContext, IShardingTableDbContext
+    public interface IScopedService
     {
-        public DefaultDbContext(DbContextOptions<DefaultDbContext> options) : base(options)
-        {
 
+    }
+
+    public class ScopedService : IScopedService
+    {
+
+    }
+
+    public class CustomerDbContextCreator : IDbContextCreator<DefaultDbContext>
+    {
+        public DbContext CreateDbContext(DbContext mainDbContext, ShardingDbContextOptions shardingDbContextOptions)
+        {
+            var dbContext = new DefaultDbContext((DbContextOptions<DefaultDbContext>)shardingDbContextOptions.DbContextOptions,((DefaultDbContext)mainDbContext).ServiceProvider);
+            Console.WriteLine("IsFrozen" + shardingDbContextOptions.DbContextOptions.IsFrozen);
+            if (dbContext is IShardingTableDbContext shardingTableDbContext)
+            {
+                shardingTableDbContext.RouteTail = shardingDbContextOptions.RouteTail;
+            }
+            _ = dbContext.Model;
+            return dbContext;
+        }
+    }
+
+    public class DefaultDbContext : AbstractShardingDbContext, IShardingTableDbContext
+    {
+        public IServiceProvider ServiceProvider { get; }
+        private readonly IScopedService _scopedService;
+
+        public DefaultDbContext(DbContextOptions<DefaultDbContext> options,IServiceProvider serviceProvider) : base(options)
+        {
+            ServiceProvider = serviceProvider;
+            _scopedService = serviceProvider.GetRequiredService<IScopedService>();
+            //Database.SetCommandTimeout(10000);
+            Console.WriteLine("DefaultDbContext ctor");
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.ApplyConfiguration(new SysUserModMap());
+            modelBuilder.ApplyConfiguration(new SysUserModAbcMap());
         }
 
         public IRouteTail RouteTail { get; set; }

@@ -3,7 +3,8 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
-using ShardingCore.DbContexts.ShardingDbContexts;
+using ShardingCore.Core;
+using ShardingCore.Core.DbContextCreator;
 using ShardingCore.Exceptions;
 using ShardingCore.Extensions;
 using ShardingCore.Sharding.Abstractions;
@@ -21,6 +22,7 @@ namespace ShardingCore.Helpers
         private ShardingCoreHelper() { }
         public static int GetStringHashCode(string value)
         {
+            Check.NotNull(value, nameof(value));
             int h = 0; // 默认值是0
             if (value.Length > 0)
             {
@@ -32,14 +34,13 @@ namespace ShardingCore.Helpers
             return h;
         }
 
-        private static readonly DateTime UtcStartTime = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         public static DateTime ConvertLongToDateTime(long timeStamp)
         {
-            return UtcStartTime.AddMilliseconds(timeStamp).AddHours(8);
+            return DateTimeOffset.FromUnixTimeMilliseconds(timeStamp).LocalDateTime; ;
         }
-        public static long ConvertDateTimeToLong(DateTime time)
+        public static long ConvertDateTimeToLong(DateTime localDateTime)
         {
-            return (long)(time.AddHours(-8) - UtcStartTime).TotalMilliseconds;
+            return new DateTimeOffset(localDateTime).ToUnixTimeMilliseconds(); ;
         }
 
         /// <summary>
@@ -75,7 +76,10 @@ namespace ShardingCore.Helpers
         }
 
 
-
+        /// <summary>
+        /// check TContext ctor is <see cref="DbContextOptions"/>
+        /// </summary>
+        /// <typeparam name="TContext">DbContext</typeparam>
         public static void CheckContextConstructors<TContext>()
             where TContext : DbContext
         {
@@ -83,17 +87,17 @@ namespace ShardingCore.Helpers
             var declaredConstructors = contextType.GetTypeInfo().DeclaredConstructors.ToList();
             if (declaredConstructors.Count != 1)
             {
-                throw new ArgumentException($"dbcontext : {contextType} declared constructor count more {contextType}");
+                throw new ArgumentException($"dbcontext : {contextType} declared constructor count more {contextType},if u want support multi constructor params plz replace ${nameof(IDbContextCreator)} interface");
             }
             if (declaredConstructors[0].GetParameters().Length != 1)
             {
-                throw new ArgumentException($"dbcontext : {contextType} declared constructor parameters more ");
+                throw new ArgumentException($"dbcontext : {contextType} declared constructor parameters more ,if u want support multi constructor params plz replace ${nameof(IDbContextCreator)} interface");
             }
 
             var paramType = declaredConstructors[0].GetParameters()[0].ParameterType;
             if (paramType != typeof(ShardingDbContextOptions) && paramType != typeof(DbContextOptions) && paramType != typeof(DbContextOptions<TContext>))
             {
-                throw new ArgumentException($"dbcontext : {contextType} declared constructor parameters should use {typeof(ShardingDbContextOptions)} or {typeof(DbContextOptions)} or {typeof(DbContextOptions<TContext>)} ");
+                throw new ArgumentException($"dbcontext : {contextType} declared constructor parameters should use {typeof(ShardingDbContextOptions)} or {typeof(DbContextOptions)} or {typeof(DbContextOptions<TContext>)},if u want support multi constructor params plz replace ${nameof(IDbContextCreator)} interface ");
             }
 
             //if (!contextType.IsShardingDbContext())
@@ -106,7 +110,7 @@ namespace ShardingCore.Helpers
             //}
 
         }
-        public static Func<ShardingDbContextOptions, DbContext> CreateActivator<TContext>() where TContext : DbContext, IShardingTableDbContext
+        public static Func<ShardingDbContextOptions, DbContext> CreateActivator<TContext>() where TContext : DbContext
         {
             var constructors
                 = typeof(TContext).GetTypeInfo().DeclaredConstructors
@@ -149,7 +153,7 @@ namespace ShardingCore.Helpers
         /// <param name="constructor"></param>
         /// <param name="paramType"></param>
         /// <returns></returns>
-        private static Func<ShardingDbContextOptions, DbContext> CreateShardingDbContextOptionsActivator<TContext>(ConstructorInfo constructor, Type paramType) where TContext : DbContext, IShardingTableDbContext
+        private static Func<ShardingDbContextOptions, DbContext> CreateShardingDbContextOptionsActivator<TContext>(ConstructorInfo constructor, Type paramType) where TContext : DbContext
         {
             var po = Expression.Parameter(paramType, "o");
             var newExpression = Expression.New(constructor, po);
@@ -168,7 +172,7 @@ namespace ShardingCore.Helpers
         /// <param name="constructor"></param>
         /// <param name="paramType"></param>
         /// <returns></returns>
-        private static Func<ShardingDbContextOptions, DbContext> CreateDbContextOptionsGenericActivator<TContext>(ConstructorInfo constructor, Type paramType) where TContext : DbContext, IShardingTableDbContext
+        private static Func<ShardingDbContextOptions, DbContext> CreateDbContextOptionsGenericActivator<TContext>(ConstructorInfo constructor, Type paramType) where TContext : DbContext
         {
             var parameterExpression = Expression.Parameter(typeof(ShardingDbContextOptions), "o");
             //o.DbContextOptions

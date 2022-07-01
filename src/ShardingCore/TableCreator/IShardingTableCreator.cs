@@ -6,30 +6,32 @@ using ShardingCore.Sharding.Abstractions;
 
 namespace ShardingCore.TableCreator
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Monday, 21 December 2020 11:22:08
-* @Email: 326308290@qq.com
-*/
-/// <summary>
-/// 
-/// </summary>
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Monday, 21 December 2020 11:22:08
+    * @Email: 326308290@qq.com
+    */
     public interface IShardingTableCreator
     {
         /// <summary>
         /// 创建表
         /// </summary>
+        /// <param name="dataSourceName"></param>
         /// <param name="tail"></param>
         /// <typeparam name="T"></typeparam>
-        void CreateTable<TShardingDbContext,T>(string tail) where T : class, IShardingTable where TShardingDbContext:DbContext,IShardingDbContext;
+        void CreateTable<T>(string dataSourceName, string tail) where T : class;
         /// <summary>
         /// 创建表
         /// </summary>
-        /// <param name="shardingDbContextType"></param>
+        /// <param name="dataSourceName"></param>
         /// <param name="shardingEntityType"></param>
         /// <param name="tail"></param>
         /// <exception cref="ShardingCreateException"></exception>
-        void CreateTable(Type shardingDbContextType,Type shardingEntityType,string tail);
+        void CreateTable(string dataSourceName, Type shardingEntityType, string tail);
+    }
+    public interface IShardingTableCreator<TShardingDbContext>: IShardingTableCreator where TShardingDbContext : DbContext, IShardingDbContext
+    {
+
     }
 }

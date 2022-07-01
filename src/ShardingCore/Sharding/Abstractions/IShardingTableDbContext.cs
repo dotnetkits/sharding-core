@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Microsoft.EntityFrameworkCore;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
+﻿using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
 
 namespace ShardingCore.Sharding.Abstractions
 {
@@ -15,6 +11,10 @@ namespace ShardingCore.Sharding.Abstractions
     */
     public interface IShardingTableDbContext
     {
+        /// <summary>
+        /// 无需实现
+        /// </summary>
         IRouteTail RouteTail { get; set; }
     }
+
 }

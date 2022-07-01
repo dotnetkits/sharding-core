@@ -1,4 +1,6 @@
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 using ShardingCore.Core;
 
 namespace Sample.SqlServer.Domain.Entities
@@ -12,12 +14,13 @@ namespace Sample.SqlServer.Domain.Entities
     /// <summary>
     /// 用户表
     /// </summary>
-    public class SysUserMod : IShardingTable
+    //[Index("Name")]
+    public class SysUserMod
     {
         /// <summary>
         /// 用户Id用于分表
         /// </summary>
-        [ShardingTableKey(TailPrefix = "_")]
+        [ShardingTableKey(TableSeparator = "_")]
         public string Id { get; set; }
         /// <summary>
         /// 用户名称
@@ -27,5 +30,6 @@ namespace Sample.SqlServer.Domain.Entities
         /// 用户姓名
         /// </summary>
         public int Age { get; set; }
+        public int AgeGroup { get; set; }
     }
 }

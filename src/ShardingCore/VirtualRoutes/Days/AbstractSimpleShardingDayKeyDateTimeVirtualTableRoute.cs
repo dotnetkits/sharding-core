@@ -1,30 +1,40 @@
+using ShardingCore.Core.VirtualRoutes;
+using ShardingCore.VirtualRoutes.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
-using ShardingCore.Core;
-using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.VirtualRoutes.Abstractions;
+using ShardingCore.Core.PhysicTables;
+using ShardingCore.Core.VirtualTables;
 
 namespace ShardingCore.VirtualRoutes.Days
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Wednesday, 27 January 2021 08:41:05
-* @Email: 326308290@qq.com
-*/
-    public abstract class AbstractSimpleShardingDayKeyDateTimeVirtualTableRoute<T>:AbstractShardingTimeKeyDateTimeVirtualTableRoute<T> where T:class,IShardingTable
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Wednesday, 27 January 2021 08:41:05
+    * @Email: 326308290@qq.com
+    */
+    public abstract class AbstractSimpleShardingDayKeyDateTimeVirtualTableRoute<TEntity>:AbstractShardingTimeKeyDateTimeVirtualTableRoute<TEntity> where TEntity:class
     {
+        /// <summary>
+        /// begin time use fixed time eg.new DateTime(20xx,xx,xx)
+        /// </summary>
+        /// <returns></returns>
         public abstract DateTime GetBeginTime();
+        /// <summary>
+        /// 这个方法会在程序启动的时候被调用,后续整个生命周期将不会被调用,仅用来告诉框架启动的时候有多少张TEntity对象的后缀表,
+        /// 然后会在启动的时候添加到 <see cref="IVirtualTable{TEntity}.AddPhysicTable(IPhysicTable physicTable)"/>
+        /// </summary>
+        /// <returns></returns>
         public override List<string> GetAllTails()
         {
-            var beginTime = GetBeginTime();
+            var beginTime = GetBeginTime().Date;
          
             var tails=new List<string>();
             //提前创建表
-            var nowTimeStamp = DateTime.Now.AddDays(1).Date;
+            var nowTimeStamp = DateTime.Now.Date;
             if (beginTime > nowTimeStamp)
-                throw new ArgumentException("起始时间不正确无法生成正确的表名");
+                throw new ArgumentException("begin time error");
             var currentTimeStamp = beginTime;
             while (currentTimeStamp <= nowTimeStamp)
             {
@@ -39,7 +49,7 @@ namespace ShardingCore.VirtualRoutes.Days
             return $"{time:yyyyMMdd}";
         }
 
-        protected override Expression<Func<string, bool>> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
+        public override Func<string, bool> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
         {
             var t = TimeFormatToTail(shardingKey);
             switch (shardingOperator)
@@ -67,5 +77,16 @@ namespace ShardingCore.VirtualRoutes.Days
                 }
             }
         }
+
+        public override string[] GetCronExpressions()
+        {
+            return new[]
+            {
+                "0 59 23 * * ?",
+                "0 0 0 * * ?",
+                "0 1 0 * * ?",
+            };
+        }
+
     }
 }

@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using ShardingCore.Core;
+using ShardingCore.Core.EntityMetadatas;
 using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.Core.VirtualRoutes.TableRoutes;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.Abstractions;
 
 namespace ShardingCore.VirtualRoutes.Mods
 {
@@ -17,13 +18,13 @@ namespace ShardingCore.VirtualRoutes.Mods
     /// <summary>
     /// 分表字段为int的取模分表
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public abstract class AbstractSimpleShardingModKeyIntVirtualTableRoute<T>:AbstractShardingOperatorVirtualTableRoute<T,int> where T:class,IShardingTable
+    /// <typeparam name="TEntity"></typeparam>
+    public abstract class AbstractSimpleShardingModKeyIntVirtualTableRoute<TEntity>: AbstractShardingOperatorVirtualTableRoute<TEntity,int> where TEntity:class
     {
         protected readonly int Mod;
         protected readonly int TailLength;
         protected readonly char PaddingChar;
-        protected AbstractSimpleShardingModKeyIntVirtualTableRoute(int tailLength,int mod,char paddingChar='0')
+        protected AbstractSimpleShardingModKeyIntVirtualTableRoute(int tailLength,int mod,char paddingChar= '0') 
         {
             if(tailLength<1)
                 throw new ArgumentException($"{nameof(tailLength)} less than 1 ");
@@ -35,14 +36,10 @@ namespace ShardingCore.VirtualRoutes.Mods
             Mod = mod;
             PaddingChar = paddingChar;
         }
-        protected override int ConvertToShardingKey(object shardingKey)
-        {
-            return Convert.ToInt32(shardingKey);
-        }
 
         public override string ShardingKeyToTail(object shardingKey)
         {
-            var shardingKeyInt = ConvertToShardingKey(shardingKey);
+            var shardingKeyInt = Convert.ToInt32(shardingKey);
             return Math.Abs(shardingKeyInt % Mod).ToString().PadLeft(TailLength,PaddingChar);
         }
 
@@ -51,7 +48,7 @@ namespace ShardingCore.VirtualRoutes.Mods
             return Enumerable.Range(0, Mod).Select(o => o.ToString().PadLeft(TailLength, PaddingChar)).ToList();
         }
 
-        protected override Expression<Func<string, bool>> GetRouteToFilter(int shardingKey, ShardingOperatorEnum shardingOperator)
+        public override Func<string, bool> GetRouteToFilter(int shardingKey, ShardingOperatorEnum shardingOperator)
         {
            
             var t = ShardingKeyToTail(shardingKey);

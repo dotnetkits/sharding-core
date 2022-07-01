@@ -1,4 +1,5 @@
 using Sample.SqlServer3x.Domain.Entities;
+using ShardingCore.Core.EntityMetadatas;
 using ShardingCore.VirtualRoutes.Mods;
 
 namespace Sample.SqlServer3x.Shardings
@@ -15,5 +16,9 @@ namespace Sample.SqlServer3x.Shardings
         {
         }
 
+        public override void Configure(EntityMetadataTableBuilder<SysUserMod> builder)
+        {
+            builder.ShardingProperty(o => o.Id);
+        }
     }
 }

@@ -1,16 +1,19 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using ShardingCore.Exceptions;
 
 namespace ShardingCore.Extensions
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Saturday, 14 November 2020 22:06:21
-* @Email: 326308290@qq.com
-*/
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Saturday, 14 November 2020 22:06:21
+    * @Email: 326308290@qq.com
+    */
     public static class ExpressionExtension
     {
         public static void SetPropertyValue<T>(this T t, string name, object value)
@@ -47,29 +50,39 @@ namespace ShardingCore.Extensions
         {
             var entityType = obj.GetType();
             PropertyInfo property;
-            Expression propertyAccess;
-            var parameter = Expression.Parameter(entityType, "o");
+            //Expression propertyAccess;
+            //var parameter = Expression.Parameter(entityType, "o");
 
             if (propertyExpression.Contains("."))
             {
                 String[] childProperties = propertyExpression.Split('.');
                 property = entityType.GetProperty(childProperties[0]);
-                propertyAccess = Expression.MakeMemberAccess(parameter, property);
+                //propertyAccess = Expression.MakeMemberAccess(parameter, property);
                 for (int i = 1; i < childProperties.Length; i++)
                 {
+                    if (property == null)
+                    {
+                        throw new ShardingCoreException($"property:[{propertyExpression}] not in type:[{entityType}]");
+                    }
                     property = property.PropertyType.GetProperty(childProperties[i]);
-                    propertyAccess = Expression.MakeMemberAccess(propertyAccess, property);
+                    //propertyAccess = Expression.MakeMemberAccess(propertyAccess, property);
                 }
             }
             else
             {
                 property = entityType.GetProperty(propertyExpression);
-                propertyAccess = Expression.MakeMemberAccess(parameter, property);
+                //propertyAccess = Expression.MakeMemberAccess(parameter, property);
             }
 
-            var lambda = Expression.Lambda(propertyAccess, parameter);
-            Delegate fn = lambda.Compile();
-            return fn.DynamicInvoke(obj);
+            if (property == null)
+            {
+                throw new ShardingCoreException($"property:[{propertyExpression}] not in type:[{entityType}]");
+            }
+
+            return property.GetValue(obj);
+            //var lambda = Expression.Lambda(propertyAccess, parameter);
+            //Delegate fn = lambda.Compile();
+            //return fn.DynamicInvoke(obj);
         }
 
         /// <summary>

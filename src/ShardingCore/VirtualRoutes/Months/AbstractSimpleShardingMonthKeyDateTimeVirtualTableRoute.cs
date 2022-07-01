@@ -1,20 +1,19 @@
-using System;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using ShardingCore.Core;
 using ShardingCore.Core.VirtualRoutes;
 using ShardingCore.Helpers;
 using ShardingCore.VirtualRoutes.Abstractions;
+using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
 
 namespace ShardingCore.VirtualRoutes.Months
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Wednesday, 27 January 2021 12:27:09
-* @Email: 326308290@qq.com
-*/
-    public abstract class AbstractSimpleShardingMonthKeyDateTimeVirtualTableRoute<T> : AbstractShardingTimeKeyDateTimeVirtualTableRoute<T> where T : class, IShardingTable
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Wednesday, 27 January 2021 12:27:09
+    * @Email: 326308290@qq.com
+    */
+    public abstract class AbstractSimpleShardingMonthKeyDateTimeVirtualTableRoute<TEntity> : AbstractShardingTimeKeyDateTimeVirtualTableRoute<TEntity> where TEntity : class
     {
         public abstract DateTime GetBeginTime();
         public override List<string> GetAllTails()
@@ -23,9 +22,9 @@ namespace ShardingCore.VirtualRoutes.Months
          
             var tails=new List<string>();
             //提前创建表
-            var nowTimeStamp =ShardingCoreHelper.GetNextMonthFirstDay(DateTime.Now);
+            var nowTimeStamp =ShardingCoreHelper.GetCurrentMonthFirstDay(DateTime.Now);
             if (beginTime > nowTimeStamp)
-                throw new ArgumentException("起始时间不正确无法生成正确的表名");
+                throw new ArgumentException("begin time error");
             var currentTimeStamp = beginTime;
             while (currentTimeStamp <= nowTimeStamp)
             {
@@ -40,7 +39,7 @@ namespace ShardingCore.VirtualRoutes.Months
             return $"{time:yyyyMM}";
         }
 
-        protected override Expression<Func<string, bool>> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
+        public override Func<string, bool> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
         {
             var t = TimeFormatToTail(shardingKey);
             switch (shardingOperator)
@@ -68,5 +67,15 @@ namespace ShardingCore.VirtualRoutes.Months
                 }
             }
         }
+        public override string[] GetCronExpressions()
+        {
+            return new[]
+            {
+                "0 59 23 28,29,30,31 * ?",
+                "0 0 0 1 * ?",
+                "0 1 0 1 * ?",
+            };
+        }
+
     }
 }

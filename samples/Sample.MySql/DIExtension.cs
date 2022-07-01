@@ -1,22 +1,20 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Sample.MySql.DbContexts;
 using Sample.MySql.Domain.Entities;
-using ShardingCore;
-using ShardingCore.DbContexts.VirtualDbContexts;
-using ShardingCore.Extensions;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using ShardingCore.Bootstrappers;
 
 namespace Sample.MySql
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Tuesday, 26 January 2021 12:29:04
-* @Email: 326308290@qq.com
-*/
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Tuesday, 26 January 2021 12:29:04
+    * @Email: 326308290@qq.com
+    */
     public static class DIExtension
     {
         public static IApplicationBuilder UseShardingCore(this IApplicationBuilder app)
@@ -30,7 +28,7 @@ namespace Sample.MySql
         {
             using (var scope=app.ApplicationServices.CreateScope())
             {
-                var virtualDbContext =scope.ServiceProvider.GetService<DefaultTableDbContext>();
+                var virtualDbContext =scope.ServiceProvider.GetService<DefaultShardingDbContext>();
                 if (!virtualDbContext.Set<SysUserMod>().Any())
                 {
                     var ids = Enumerable.Range(1, 1000);
@@ -57,8 +55,44 @@ namespace Sample.MySql
                     virtualDbContext.AddRange(userMods);
                     virtualDbContext.AddRange(userModMonths);
                     virtualDbContext.SaveChanges();
+
                 }
             }
+            //using (var scope = app.ApplicationServices.CreateScope())
+            //{
+            //    var dbContext = scope.ServiceProvider.GetService<DefaultShardingDbContext>();
+            //    var queryable = from sum in dbContext.Set<SysUserMod>()
+            //        join st in dbContext.Set<SysTest>().Where(p =>  p.UserId == "admin")
+            //        on sum.Id equals st.Id
+            //        select new
+            //        {
+            //            st.UserId,
+            //            sum.Name
+            //        };
+            //    var result =  queryable.ToList();
+
+            //    Console.WriteLine(result.Count);
+            //}
+
+            //using (var scope = app.ApplicationServices.CreateScope())
+            //{
+            //    var dbContext = scope.ServiceProvider.GetService<DefaultShardingDbContext>();
+
+            //    var queryable = from sum in dbContext.Set<SysUserMod>()
+            //        from st in dbContext.Set<SysTest>().Where(p => p.Id == sum.Id && p.UserId == "admin")
+            //        select new
+            //        {
+            //            st.UserId,
+            //            sum.Name
+            //        };
+            //    var result =  queryable.ToList();
+
+            //    Console.WriteLine(result.Count);
+            //}
+
+
+
+
         }
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,20 +12,23 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
     * @Date: Sunday, 15 August 2021 06:39:52
     * @Email: 326308290@qq.com
     */
-    public class PaginationStreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
+    internal class PaginationStreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
     {
-        private readonly StreamMergeContext<T> _mergeContext;
+        private readonly StreamMergeContext _mergeContext;
         private readonly IStreamMergeAsyncEnumerator<T> _enumerator;
         private readonly int? _skip;
         private readonly int? _take;
         private int realSkip = 0;
         private int realTake = 0;
 
-        public PaginationStreamMergeAsyncEnumerator(StreamMergeContext<T> mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> sources)
+        public PaginationStreamMergeAsyncEnumerator(StreamMergeContext mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> sources):this(mergeContext, sources,mergeContext.Skip, mergeContext.Take)
+        {
+        }
+        public PaginationStreamMergeAsyncEnumerator(StreamMergeContext mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> sources,int? skip,int? take)
         {
             _mergeContext = mergeContext;
-            _skip = mergeContext.Skip;
-            _take = mergeContext.Take;
+            _skip = skip;
+            _take = take;
             if (_mergeContext.HasGroupQuery())
                 _enumerator = new MultiAggregateOrderStreamMergeAsyncEnumerator<T>(_mergeContext, sources);
             else
@@ -64,7 +68,7 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
                 if (_take.HasValue)
                 {
                     realTake++;
-                    if (realTake >= _take.Value)
+                    if (realTake > _take.Value)
                         return false;
                 }
             }
@@ -72,7 +76,40 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
             return next;
         }
 
-        public T Current => _enumerator.Current;
+        public bool MoveNext()
+        {
+            //如果合并数据的时候不需要跳过也没有take多少那么就是直接next
+            while (_skip.GetValueOrDefault() > this.realSkip)
+            {
+                var has = _enumerator.MoveNext();
+                realSkip++;
+                if (!has)
+                    return false;
+            }
+
+            var next = _enumerator.MoveNext();
+
+            if (next)
+            {
+                if (_take.HasValue)
+                {
+                    realTake++;
+                    if (realTake > _take.Value)
+                        return false;
+                }
+            }
+
+            return next;
+        }
+
+        public void Reset()
+        {
+            throw new NotImplementedException();
+        }
+
+        object IEnumerator.Current => Current;
+
+        public T Current => _enumerator.GetCurrent();
         public bool SkipFirst()
         {
             return _enumerator.SkipFirst();
@@ -84,18 +121,19 @@ namespace ShardingCore.Sharding.Enumerators.StreamMergeAsync
         }
 
         public T ReallyCurrent => _enumerator.ReallyCurrent;
+        public T GetCurrent()
+        {
+            return _enumerator.GetCurrent();
+        }
+        public void Dispose()
+        {
+            _enumerator.Dispose();
+        }
 #if !EFCORE2
 
         public ValueTask DisposeAsync()
         {
             return _enumerator.DisposeAsync();
-        }
-#endif
-#if EFCORE2
-
-        public void Dispose()
-        {
-            _enumerator.Dispose();
         }
 #endif
     }

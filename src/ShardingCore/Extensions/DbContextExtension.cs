@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore.Internal;
@@ -11,9 +14,13 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using ShardingCore.Core;
+using ShardingCore.Core.EntityMetadatas;
+using ShardingCore.EFCores;
+using ShardingCore.Utils;
 
 namespace ShardingCore.Extensions
 {
+    [ExcludeFromCodeCoverage]
     public static class DbContextExtension
     {
         /// <summary>
@@ -22,25 +29,153 @@ namespace ShardingCore.Extensions
         /// <param name="dbContext"></param>
         public static void RemoveDbContextRelationModelThatIsShardingTable(this DbContext dbContext)
         {
-            var contextModel = dbContext.Model as Model;
+#if !EFCORE2&&!EFCORE3&&!EFCORE5&&!EFCORE6
+            throw new NotImplementedException();
+#endif
+#if EFCORE6
 
-#if EFCORE5
-var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
+            var contextModel = dbContext.GetService<IDesignTimeModel>().Model; ;
+#endif
+#if EFCORE2 || EFCORE3 || EFCORE5
+
+            var contextModel = dbContext.Model as Model;
+#endif
+            var entityMetadataManager = (IEntityMetadataManager)ShardingContainer.GetService(typeof(IEntityMetadataManager<>).GetGenericType0(dbContext.GetType()));
+
+#if EFCORE6
+            var contextModelRelationalModel = contextModel.GetRelationalModel() as RelationalModel;
             var valueTuples =
- contextModelRelationalModel.Tables.Where(o=>o.Value.EntityTypeMappings.Any(m=>m.EntityType.ClrType.IsShardingTable())).Select(o=>o.Key).ToList();
+                contextModelRelationalModel.Tables.Where(o =>o.Value.EntityTypeMappings.Any(m => entityMetadataManager.IsShardingTable(m.EntityType.ClrType))).Select(o => o.Key).ToList();
             for (int i = 0; i < valueTuples.Count; i++)
             {
                 contextModelRelationalModel.Tables.Remove(valueTuples[i]);
             }
 #endif
-#if !EFCORE5
+#if EFCORE5
+            var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
+            var valueTuples =
+ contextModelRelationalModel.Tables.Where(o => o.Value.EntityTypeMappings.Any(m => entityMetadataManager.IsShardingTable(m.EntityType.ClrType))).Select(o => o.Key).ToList();
+            for (int i = 0; i < valueTuples.Count; i++)
+            {
+                contextModelRelationalModel.Tables.Remove(valueTuples[i]);
+            }
+#endif
+#if EFCORE2 || EFCORE3
             var entityTypes =
                 contextModel.GetFieldValue("_entityTypes") as SortedDictionary<string, EntityType>;
-            var list = entityTypes.Where(o=>o.Value.ClrType.IsShardingTable()).Select(o=>o.Key).ToList();
+            var list = entityTypes.Where(o=>entityMetadataManager.IsShardingTable(o.Value.ClrType)).Select(o=>o.Key).ToList();
             for (int i = 0; i < list.Count; i++)
             {
                 entityTypes.Remove(list[i]);
             }
+#endif
+        }
+
+        //        /// <summary>
+        //        /// 移除所有的没有分片的表
+        //        /// </summary>
+        //        /// <param name="dbContext"></param>
+        //        public static void RemoveDbContextAllRelationModel(this DbContext dbContext)
+        //        {
+        //#if EFCORE6
+
+        //            var contextModel = dbContext.GetService<IDesignTimeModel>().Model; ;
+        //#endif
+        //#if EFCORE2 || EFCORE3 || EFCORE5
+
+        //            var contextModel = dbContext.Model as Model;
+        //#endif
+        //#if EFCORE6
+        //            var contextModelRelationalModel = contextModel.GetRelationalModel() as RelationalModel;
+        //            contextModelRelationalModel.Tables.Clear();
+        //#endif
+        //#if EFCORE5
+        //            var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
+        //            contextModelRelationalModel.Tables.Clear();
+        //#endif
+        //#if EFCORE2 || EFCORE3
+        //            var entityTypes =
+        //                contextModel.GetFieldValue("_entityTypes") as SortedDictionary<string, EntityType>;
+        //            entityTypes.Clear();
+        //#endif
+        //        }
+        /// <summary>
+        /// 移除所有的没有分片的表
+        /// </summary>
+        /// <param name="dbContext"></param>
+        public static void RemoveDbContextAllRelationModelThatIsNoSharding(this DbContext dbContext)
+        {
+#if !EFCORE2&&!EFCORE3&&!EFCORE5&&!EFCORE6
+            throw new NotImplementedException();
+#endif
+#if EFCORE6
+
+            var contextModel = dbContext.GetService<IDesignTimeModel>().Model; ;
+#endif
+#if EFCORE2 || EFCORE3 || EFCORE5
+
+            var contextModel = dbContext.Model as Model;
+#endif
+            var entityMetadataManager = (IEntityMetadataManager)ShardingContainer.GetService(typeof(IEntityMetadataManager<>).GetGenericType0(dbContext.GetType()));
+
+#if EFCORE6
+            var contextModelRelationalModel = contextModel.GetRelationalModel() as RelationalModel;
+            var valueTuples =
+                contextModelRelationalModel.Tables.Where(o => o.Value.EntityTypeMappings.Any(m => entityMetadataManager.IsShardingTable(m.EntityType.ClrType) ||entityMetadataManager.TryGet(m.EntityType.ClrType)==null)).Select(o => o.Key).ToList();
+            for (int i = 0; i < valueTuples.Count; i++)
+            {
+                contextModelRelationalModel.Tables.Remove(valueTuples[i]);
+            }
+#endif
+#if EFCORE5
+            var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
+            var valueTuples =
+ contextModelRelationalModel.Tables.Where(o => o.Value.EntityTypeMappings.Any(m => entityMetadataManager.IsShardingTable(m.EntityType.ClrType)||entityMetadataManager.TryGet(m.EntityType.ClrType)==null)).Select(o => o.Key).ToList();
+            for (int i = 0; i < valueTuples.Count; i++)
+            {
+                contextModelRelationalModel.Tables.Remove(valueTuples[i]);
+            }
+#endif
+#if EFCORE2 || EFCORE3
+            var entityTypes =
+                contextModel.GetFieldValue("_entityTypes") as SortedDictionary<string, EntityType>;
+            var list = entityTypes.Where(o => entityMetadataManager.IsShardingTable(o.Value.ClrType) || entityMetadataManager.TryGet(o.Value.ClrType) == null).Select(o => o.Key).ToList();
+            for (int i = 0; i < list.Count; i++)
+            {
+                entityTypes.Remove(list[i]);
+            }
+#endif
+        }
+        /// <summary>
+        /// 移除所有的表
+        /// </summary>
+        /// <param name="dbContext"></param>
+        public static void RemoveDbContextAllRelationModel(this DbContext dbContext)
+        {
+#if !EFCORE2&&!EFCORE3&&!EFCORE5&&!EFCORE6
+            throw new NotImplementedException();
+#endif
+#if EFCORE6
+
+            var contextModel = dbContext.GetService<IDesignTimeModel>().Model; ;
+#endif
+#if EFCORE2 || EFCORE3 || EFCORE5
+
+            var contextModel = dbContext.Model as Model;
+#endif
+
+#if EFCORE6
+            var contextModelRelationalModel = contextModel.GetRelationalModel() as RelationalModel;
+            contextModelRelationalModel.Tables.Clear();
+#endif
+#if EFCORE5
+            var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
+            contextModelRelationalModel.Tables.Clear();
+#endif
+#if EFCORE2 || EFCORE3
+            var entityTypes =
+                contextModel.GetFieldValue("_entityTypes") as SortedDictionary<string, EntityType>;
+            entityTypes.Clear();
 #endif
         }
 
@@ -52,8 +187,26 @@ var contextModelRelationalModel = contextModel.RelationalModel as RelationalMode
         public static void RemoveDbContextRelationModelSaveOnlyThatIsNamedType(this DbContext dbContext,
             Type shardingType)
         {
+#if !EFCORE2&&!EFCORE3&&!EFCORE5&&!EFCORE6
+            throw new NotImplementedException();
+#endif
+#if EFCORE2 ||EFCORE3 ||EFCORE5
+
             var contextModel = dbContext.Model as Model;
-            
+#endif
+#if EFCORE6
+            var contextModel = dbContext.GetService<IDesignTimeModel>().Model; ;
+            var contextModelRelationalModel = contextModel.GetRelationalModel() as RelationalModel;
+            var valueTuples =
+                contextModelRelationalModel.Tables
+                    .Where(o => o.Value.EntityTypeMappings.All(m => m.EntityType.ClrType != shardingType))
+                    .Select(o => o.Key).ToList();
+            for (int i = 0; i < valueTuples.Count; i++)
+            {
+                contextModelRelationalModel.Tables.Remove(valueTuples[i]);
+            }
+#endif
+
 #if EFCORE5
             var contextModelRelationalModel = contextModel.RelationalModel as RelationalModel;
             var valueTuples = contextModelRelationalModel.Tables
@@ -64,7 +217,7 @@ var contextModelRelationalModel = contextModel.RelationalModel as RelationalMode
                 contextModelRelationalModel.Tables.Remove(valueTuples[i]);
             }
 #endif
-#if !EFCORE5
+#if EFCORE2 || EFCORE3
             var entityTypes =
                 contextModel.GetFieldValue("_entityTypes") as SortedDictionary<string, EntityType>;
             var list = entityTypes.Where(o=>o.Value.ClrType!=shardingType).Select(o=>o.Key).ToList();
@@ -76,7 +229,7 @@ var contextModelRelationalModel = contextModel.RelationalModel as RelationalMode
         }
 
         public static void RemoveDbContextRelationModelSaveOnlyThatIsNamedType<T>(this DbContext dbContext)
-            where T : IShardingTable
+            where T:class
         {
             RemoveDbContextRelationModelSaveOnlyThatIsNamedType(dbContext, typeof(T));
         }
@@ -87,39 +240,37 @@ var contextModelRelationalModel = contextModel.RelationalModel as RelationalMode
         /// <param name="dbContext"></param>
         public static void RemoveModelCache(this DbContext dbContext)
         {
-            var serviceScope = typeof(DbContext).GetTypeFieldValue(dbContext, "_serviceScope") as IServiceScope;
+#if !EFCORE2&&!EFCORE3&&!EFCORE5&&!EFCORE6
+            throw new NotImplementedException();
+#endif
+#if EFCORE6
+            var shardingModelSource = dbContext.GetService<IModelSource>() as IShardingModelSource;
+            var modelCacheKeyFactory = shardingModelSource.GetModelCacheKeyFactory();
+            object key1 = modelCacheKeyFactory.Create(dbContext,true);
+            shardingModelSource.Remove(key1);
+            object key2 = modelCacheKeyFactory.Create(dbContext,false);
+            shardingModelSource.Remove(key2);
+#endif
 #if EFCORE5
-            var dependencies = serviceScope.ServiceProvider.GetService<IModelCreationDependencies>();
-            var dependenciesModelSource = dependencies.ModelSource as ModelSource;
-
-            var modelSourceDependencies =
-                dependenciesModelSource.GetPropertyValue("Dependencies") as ModelSourceDependencies;
-            IMemoryCache memoryCache = modelSourceDependencies.MemoryCache;
-            object key1 = modelSourceDependencies.ModelCacheKeyFactory.Create(dbContext);
-            memoryCache.Remove(key1);
+            var shardingModelSource = dbContext.GetService<IModelSource>() as IShardingModelSource;
+            var modelCacheKeyFactory = shardingModelSource.GetModelCacheKeyFactory();
+            object key1 = modelCacheKeyFactory.Create(dbContext);
+            shardingModelSource.Remove(key1);
 #endif
 #if EFCORE3
            
-            var modelSource = serviceScope.ServiceProvider.GetService<IModelSource>();
-            var modelSourceImpl = modelSource as ModelSource;
-            
-            var modelSourceDependencies =
-                modelSourceImpl.GetPropertyValue("Dependencies") as ModelSourceDependencies;
-            IMemoryCache memoryCache = modelSourceDependencies.MemoryCache;
-            object key1 = modelSourceDependencies.ModelCacheKeyFactory.Create(dbContext);
-            memoryCache.Remove(key1);
+            var shardingModelSource = dbContext.GetService<IModelSource>()  as IShardingModelSource;
+            var modelCacheKeyFactory = shardingModelSource.GetModelCacheKeyFactory();
+            object key1 = modelCacheKeyFactory.Create(dbContext);
+            shardingModelSource.Remove(key1);
 #endif
+
 #if EFCORE2
-           
-            var modelSource = serviceScope.ServiceProvider.GetService<IModelSource>();
-            var modelSourceImpl = modelSource as RelationalModelSource;
-            
-            var modelSourceDependencies =
-                modelSourceImpl.GetPropertyValue("Dependencies") as ModelSourceDependencies;
-            var models =
-                typeof(ModelSource).GetTypeFieldValue(modelSourceImpl, "_models") as ConcurrentDictionary<object, Lazy<IModel>>;
-            object key1 = modelSourceDependencies.ModelCacheKeyFactory.Create(dbContext);
-            models.TryRemove(key1,out var del);
+
+            var shardingModelSource = dbContext.GetService<IModelSource>() as IShardingModelSource;
+            var modelCacheKeyFactory = shardingModelSource.GetModelCacheKeyFactory();
+            object key1 = modelCacheKeyFactory.Create(dbContext);
+            shardingModelSource.Remove(key1);
 #endif
         }
 
@@ -130,28 +281,47 @@ var contextModelRelationalModel = contextModel.RelationalModel as RelationalMode
         /// <returns></returns>
         public static object GetModelCacheSyncObject(this DbContext dbContext)
         {
-            var serviceScope = typeof(DbContext).GetTypeFieldValue(dbContext, "_serviceScope") as IServiceScope;
-#if EFCORE5
-            var dependencies = serviceScope.ServiceProvider.GetService<IModelCreationDependencies>();
-            var dependenciesModelSource = dependencies.ModelSource as ModelSource;
-
-            var syncObject = dependenciesModelSource.GetFieldValue("_syncObject");
-            return syncObject;
-#endif
-#if EFCORE3
-            var modelSource = serviceScope.ServiceProvider.GetService<IModelSource>();
-            var modelSourceImpl = modelSource as ModelSource;
-
-            var syncObject = modelSourceImpl.GetFieldValue("_syncObject");
-            return syncObject;
-#endif
-#if EFCORE2
-            return sLock;
-#endif
-
+            IShardingModelSource shardingModelSource = dbContext.GetService<IModelSource>() as IShardingModelSource;
+            return shardingModelSource.GetSyncObject();
         }
 
-        private static object sLock = new object();
+
+        public static IEnumerable<object> GetPrimaryKeyValues<TEntity>(TEntity entity,IKey primaryKey) where TEntity : class
+        {
+            return primaryKey.Properties.Select(o =>entity.GetPropertyValue(o.Name));
+        }
+
+        public static TEntity GetAttachedEntity<TEntity>(this DbContext context, TEntity entity) where TEntity:class
+        {
+            if (entity == null) { throw new ArgumentNullException(nameof(entity)); }
+            var entityPrimaryKey = context.Model.FindEntityType(entity.GetType()).FindPrimaryKey();
+            if (entityPrimaryKey == null)
+            {
+                return entity;
+            }
+            var primaryKeyValue = GetPrimaryKeyValues(entity, entityPrimaryKey).ToArray();
+            if (primaryKeyValue.IsEmpty())
+                return null;
+            var dbContextDependencies = (IDbContextDependencies)typeof(DbContext).GetTypePropertyValue(context, "DbContextDependencies");
+            var stateManager = dbContextDependencies.StateManager;
+            
+            //var entityIKey = ShardingKeyUtil.GetEntityIKey(entity);
+            var internalEntityEntry = stateManager.TryGetEntry(entityPrimaryKey, primaryKeyValue);
+         
+            if (internalEntityEntry == null)
+                return null;
+            return (TEntity)internalEntityEntry.Entity;
+            //sp.Restart();
+
+            //var entityEntries = context.ChangeTracker.Entries<TEntity>();
+            //sp.Stop();
+            //Console.WriteLine($"ChangeTracker.Entries:{sp.ElapsedMilliseconds}毫秒");
+            //sp.Restart();
+            //var entry = entityEntries.Where(e => e.State != EntityState.Detached && primaryKeyValue.SequenceEqual(ShardingKeyUtil.GetPrimaryKeyValues(e.Entity))).FirstOrDefault();
+            //sp.Stop();
+            //Console.WriteLine($"ChangeTracker.FirstOrDefault:{sp.ElapsedMilliseconds}毫秒");
+            //return entry?.Entity;
+        }
 
     }
 }

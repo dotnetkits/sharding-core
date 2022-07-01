@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -12,6 +13,8 @@ namespace ShardingCore.Extensions
 */
     public static class LinqExtension
     {
+
+        //public static void ForEach<T>(this IEnumerable<T> source)
 
 #if !EFCORE5
         public static HashSet<TSource> ToHashSet<TSource>(
@@ -49,18 +52,17 @@ namespace ShardingCore.Extensions
             return values.Contains(thisValue);
         }
         /// <summary>
-        /// 给IEnumerable拓展ForEach方法
+        /// 按size分区,每个区size个数目
         /// </summary>
-        /// <typeparam name="T">模型类</typeparam>
-        /// <param name="enumberable">数据源</param>
-        /// <param name="func">方法</param>
-        public static void ForEach<T>(this IEnumerable<T> enumberable, Action<T> func)
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="elements"></param>
+        /// <param name="size"></param>
+        /// <returns></returns>
+        public static IEnumerable<List<TSource>> Partition<TSource>(this IEnumerable<TSource> elements,int size)
         {
-            foreach (var item in enumberable)
-            {
-                func(item);
-            }
+           return elements.Select((o, i) => new { Element = o, Index = i / size })
+                .GroupBy(o => o.Index).Select(o => o.Select(g => g.Element).ToList());
         }
-        
+
     }
 }

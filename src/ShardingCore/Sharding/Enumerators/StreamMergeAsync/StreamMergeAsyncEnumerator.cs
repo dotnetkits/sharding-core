@@ -6,20 +6,36 @@ using System.Threading.Tasks;
 
 namespace ShardingCore.Sharding.Enumerators
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Saturday, 14 August 2021 21:25:50
-* @Email: 326308290@qq.com
-*/
-    public class StreamMergeAsyncEnumerator<T>:IStreamMergeAsyncEnumerator<T>
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Saturday, 14 August 2021 21:25:50
+    * @Email: 326308290@qq.com
+    */
+    internal class StreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
     {
-        private readonly IAsyncEnumerator<T> _source;
+        private readonly IAsyncEnumerator<T> _asyncSource;
+        private readonly IEnumerator<T> _syncSource;
         private bool skip;
+        private readonly bool _asyncEnumerator;
+        private readonly bool _syncEnumerator;
 
-        public StreamMergeAsyncEnumerator(IAsyncEnumerator<T> source)
+        public StreamMergeAsyncEnumerator(IAsyncEnumerator<T> asyncSource)
         {
-            _source = source;
+            if (_syncSource != null)
+                throw new ArgumentNullException(nameof(_syncSource));
+
+            _asyncSource = asyncSource;
+            _asyncEnumerator = asyncSource!=null;
+            skip = true;
+        }
+
+        public StreamMergeAsyncEnumerator(IEnumerator<T> syncSource)
+        {
+            if (_asyncSource != null)
+                throw new ArgumentNullException(nameof(_asyncSource));
+            _syncSource = syncSource;
+            _syncEnumerator = syncSource!=null;
             skip = true;
         }
 
@@ -33,9 +49,10 @@ namespace ShardingCore.Sharding.Enumerators
             return false;
         }
 #if !EFCORE2
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            return _source.DisposeAsync();
+            if (_asyncEnumerator)
+                await _asyncSource.DisposeAsync();
         }
 
         public async ValueTask<bool> MoveNextAsync()
@@ -43,55 +60,74 @@ namespace ShardingCore.Sharding.Enumerators
             if (skip)
             {
                 skip = false;
-                return null!=_source.Current;
+                return null != _asyncSource.Current;
             }
-            return await _source.MoveNextAsync();
+            return await _asyncSource.MoveNextAsync();
         }
-        public T Current => skip?default:_source.Current;
-        public T ReallyCurrent => _source.Current;
-        public bool HasElement()
+
+        public void Dispose()
         {
-            return null != _source.Current;
+            _syncSource?.Dispose();
         }
 
 #endif
-#if EFCORE2
-        public void Dispose()
-        {
-             _source.Dispose();
-        }
-
-        public async Task<bool> MoveNext(CancellationToken cancellationToken=new CancellationToken())
+        public bool MoveNext()
         {
             if (skip)
             {
                 skip = false;
-                return null != SourceCurrent();
+                return null != _syncSource.Current;
             }
-            return await _source.MoveNext(cancellationToken);
+            return _syncSource.MoveNext();
         }
-        public T Current => skip ? default : SourceCurrent();
-        public T ReallyCurrent => SourceCurrent();
+
         public bool HasElement()
         {
-            return null != SourceCurrent();
+            if (_asyncEnumerator) return null != _asyncSource.Current;
+            if (_syncEnumerator) return null != _syncSource.Current;
+            return false;
         }
 
-        private T SourceCurrent()
+
+        public void Reset()
         {
-            try
-            {
-                if (tryGetCurrentError)
-                    return default;
-                return _source.Current;
-            }catch(Exception e)
-            {
-                tryGetCurrentError = true;
-                return default;
-            }
+            throw new NotImplementedException();
         }
 
-        private bool tryGetCurrentError = false;
+        object IEnumerator.Current => Current;
+        public T Current => GetCurrent();
+        public T ReallyCurrent => GetReallyCurrent();
+        public T GetCurrent()
+        {
+            if (skip)
+                return default;
+            if (_asyncEnumerator) return _asyncSource.Current;
+            if (_syncEnumerator) return _syncSource.Current;
+            return default;
+        }
+        public T GetReallyCurrent()
+        {
+            if (_asyncEnumerator) return _asyncSource.Current;
+            if (_syncEnumerator) return _syncSource.Current;
+            return default;
+        }
+#if EFCORE2
+        public void Dispose()
+        {
+            _asyncSource?.Dispose();
+            _syncSource?.Dispose();
+        }
+
+        public async Task<bool> MoveNext(CancellationToken cancellationToken = new CancellationToken())
+        {
+            if (skip)
+            {
+                skip = false;
+                return null != _asyncSource.Current;
+            }
+            return await _asyncSource.MoveNext(cancellationToken);
+        }
+
 
 #endif
     }

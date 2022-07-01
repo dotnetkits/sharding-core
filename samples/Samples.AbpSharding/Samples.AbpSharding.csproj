@@ -5,11 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Abp.EntityFrameworkCore" Version="6.4.0" />
+    <PackageReference Include="Volo.Abp.EntityFrameworkCore" Version="4.4.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ShardingCore\ShardingCore.csproj" />
+    <ProjectReference Include="..\..\src5x\ShardingCore.5x\ShardingCore.5x.csproj" />
   </ItemGroup>
 
 </Project>

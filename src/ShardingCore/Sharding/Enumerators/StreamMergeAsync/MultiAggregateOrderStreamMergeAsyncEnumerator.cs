@@ -1,31 +1,34 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ShardingCore.Core.Internal.PriorityQueues;
+using ShardingCore.Exceptions;
 using ShardingCore.Extensions;
 using ShardingCore.Sharding.Enumerators.AggregateExtensions;
+using ShardingCore.Sharding.Visitors.Selects;
 
 namespace ShardingCore.Sharding.Enumerators
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Sunday, 15 August 2021 06:43:26
-* @Email: 326308290@qq.com
-*/
-    public class MultiAggregateOrderStreamMergeAsyncEnumerator<T>:IStreamMergeAsyncEnumerator<T>
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Sunday, 15 August 2021 06:43:26
+    * @Email: 326308290@qq.com
+    */
+    internal class MultiAggregateOrderStreamMergeAsyncEnumerator<T> : IStreamMergeAsyncEnumerator<T>
     {
-        
-        private readonly StreamMergeContext<T> _mergeContext;
+
+        private readonly StreamMergeContext _mergeContext;
         private readonly IEnumerable<IStreamMergeAsyncEnumerator<T>> _enumerators;
         private readonly PriorityQueue<IOrderStreamMergeAsyncEnumerator<T>> _queue;
         private T CurrentValue;
         private List<object> CurrentGroupValues;
         private bool _skipFirst;
 
-        public MultiAggregateOrderStreamMergeAsyncEnumerator(StreamMergeContext<T> mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> enumerators)
+        public MultiAggregateOrderStreamMergeAsyncEnumerator(StreamMergeContext mergeContext, IEnumerable<IStreamMergeAsyncEnumerator<T>> enumerators)
         {
             _mergeContext = mergeContext;
             _enumerators = enumerators;
@@ -52,23 +55,23 @@ namespace ShardingCore.Sharding.Enumerators
         private List<object> GetCurrentGroupValues(IOrderStreamMergeAsyncEnumerator<T> enumerator)
         {
             var first = enumerator.ReallyCurrent;
-            return _mergeContext.SelectContext.SelectProperties.Where(o => !o.IsAggregateMethod)
+            return _mergeContext.SelectContext.SelectProperties.Where(o => !(o is SelectAggregateProperty))
                 .Select(o => first.GetValueByExpression(o.PropertyName)).ToList();
         }
 #if !EFCORE2
         public async ValueTask<bool> MoveNextAsync()
 #endif
 #if EFCORE2
-        public async Task<bool> MoveNext(CancellationToken cancellationToken=new CancellationToken())
+        public async Task<bool> MoveNext(CancellationToken cancellationToken = new CancellationToken())
 #endif
         {
             if (_queue.IsEmpty())
                 return false;
 #if !EFCORE2
-            var hasNext = await SetCurrentValue();
+            var hasNext = await SetCurrentValueAsync();
 #endif
 #if EFCORE2
-            var hasNext = await SetCurrentValue(cancellationToken);
+            var hasNext = await SetCurrentValueAsync(cancellationToken);
 #endif
             if (hasNext)
             {
@@ -89,17 +92,17 @@ namespace ShardingCore.Sharding.Enumerators
             return true;
         }
 #if !EFCORE2
-        private async ValueTask<bool>  SetCurrentValue()
+        private async ValueTask<bool> SetCurrentValueAsync()
 #endif
 #if EFCORE2
-        private async Task<bool> SetCurrentValue(CancellationToken cancellationToken=new CancellationToken())
+        private async Task<bool> SetCurrentValueAsync(CancellationToken cancellationToken = new CancellationToken())
 #endif
         {
             CurrentValue = default;
             var currentValues = new List<T>();
             while (EqualWithGroupValues())
             {
-                var current=_queue.Peek().Current;
+                var current = _queue.Peek().GetCurrent();
                 currentValues.Add(current);
                 var first = _queue.Poll();
 
@@ -123,42 +126,97 @@ namespace ShardingCore.Sharding.Enumerators
 
             return true;
         }
+        public bool MoveNext()
+        {
+            if (_queue.IsEmpty())
+                return false;
+            var hasNext = SetCurrentValue();
+            if (hasNext)
+            {
+                CurrentGroupValues = _queue.IsEmpty() ? new List<object>(0) : GetCurrentGroupValues(_queue.Peek());
+            }
+            return hasNext;
+        }
+        private bool SetCurrentValue()
+        {
+            CurrentValue = default;
+            var currentValues = new List<T>();
+            while (EqualWithGroupValues())
+            {
+                var current = _queue.Peek().GetCurrent();
+                currentValues.Add(current);
+                var first = _queue.Poll();
+
+                if (first.MoveNext())
+                {
+                    _queue.Offer(first);
+                }
+
+                if (_queue.IsEmpty())
+                {
+                    break;
+                }
+            }
+
+            MergeValue(currentValues);
+
+            return true;
+        }
 
         private void MergeValue(List<T> aggregateValues)
         {
-           
+
             if (aggregateValues.IsNotEmpty())
             {
-                CurrentValue = aggregateValues.First();
+                var copyFields = string.Join(",", _mergeContext.SelectContext.SelectProperties.Select(o=>o.PropertyName));
+                CurrentValue =  AggregateExtension.CopyTSource(aggregateValues.First());
+
                 if (aggregateValues.Count > 1)
                 {
-                    var aggregates = _mergeContext.SelectContext.SelectProperties.Where(o => o.IsAggregateMethod).ToList();
+                    var aggregates = _mergeContext.SelectContext.SelectProperties.OfType<SelectAggregateProperty>().ToList();
                     if (aggregates.IsNotEmpty())
                     {
+                        var propertyValues = new LinkedList<(string Name,object Value)>();
                         foreach (var aggregate in aggregates)
                         {
                             object aggregateValue = null;
-                            if (aggregate.AggregateMethod == nameof(Queryable.Count))
+                            if (aggregate is SelectCountProperty  || aggregate is SelectSumProperty)
                             {
-                                aggregateValue = aggregateValues.AsQueryable().Sum(aggregate.PropertyName);
-                            } else if (aggregate.AggregateMethod == nameof(Queryable.Sum))
+                                aggregateValue = aggregateValues.AsQueryable().SumByProperty(aggregate.Property);
+                            }
+                            else if (aggregate is SelectMaxProperty)
                             {
-                                aggregateValue = aggregateValues.AsQueryable().Sum(aggregate.PropertyName);
-                            } else if (aggregate.AggregateMethod == nameof(Queryable.Max))
+                                aggregateValue = aggregateValues.AsQueryable().Max(aggregate.Property);
+                            }
+                            else if (aggregate is SelectMinProperty)
                             {
-                                aggregateValue = aggregateValues.AsQueryable().Max(aggregate.PropertyName);
-                            }else if (aggregate.AggregateMethod == nameof(Queryable.Min))
+                                aggregateValue = aggregateValues.AsQueryable().Min(aggregate.Property);
+                            }
+                            else if (aggregate is SelectAverageProperty selectAverageProperty)
                             {
-                                aggregateValue = aggregateValues.AsQueryable().Min(aggregate.PropertyName);
-                            }else if (aggregate.AggregateMethod == nameof(Queryable.Average))
-                            {
-                                aggregateValue = aggregateValues.AsQueryable().Average(aggregate.PropertyName);
+                                if (selectAverageProperty.CountProperty!=null)
+                                {
+                                    aggregateValue = aggregateValues.AsQueryable().AverageWithCount(selectAverageProperty.Property, selectAverageProperty.CountProperty,selectAverageProperty.Property.PropertyType);
+                                }
+                                else if (selectAverageProperty.SumProperty != null)
+                                {
+                                    aggregateValue = aggregateValues.AsQueryable().AverageWithSum(selectAverageProperty.Property, selectAverageProperty.SumProperty, selectAverageProperty.Property.PropertyType);
+                                }
+                                else
+                                {
+                                    throw new ShardingCoreInvalidOperationException($"method:{aggregate.AggregateMethod} invalid operation ");
+                                }
                             }
                             else
                             {
-                                throw new InvalidOperationException($"method:{aggregate.AggregateMethod} invalid operation ");
+                                throw new ShardingCoreInvalidOperationException($"method:{aggregate.AggregateMethod} invalid operation ");
                             }
-                            CurrentValue.SetPropertyValue(aggregate.PropertyName,aggregateValue);
+
+                            propertyValues.AddLast((Name: aggregate.PropertyName, Value: aggregateValue));
+                        }
+                        foreach (var propertyValue in propertyValues)
+                        {
+                            CurrentValue.SetPropertyValue(propertyValue.Name, propertyValue.Value);
                         }
                     }
                 }
@@ -176,7 +234,11 @@ namespace ShardingCore.Sharding.Enumerators
             return ReallyCurrent != null;
         }
 
-        public T ReallyCurrent => _queue.IsEmpty()?default(T):_queue.Peek().ReallyCurrent;
+        public T ReallyCurrent => _queue.IsEmpty() ? default(T) : _queue.Peek().ReallyCurrent;
+        public T GetCurrent()
+        {
+            return CurrentValue;
+        }
 
 #if !EFCORE2
 
@@ -188,16 +250,22 @@ namespace ShardingCore.Sharding.Enumerators
             }
         }
 #endif
-#if EFCORE2
+
+
+        public void Reset()
+        {
+            throw new NotImplementedException();
+        }
+
+        object IEnumerator.Current => Current;
+
+        public T Current => CurrentValue;
         public void Dispose()
         {
             foreach (var enumerator in _enumerators)
             {
-                 enumerator.Dispose();
+                enumerator.Dispose();
             }
         }
-#endif
-
-        public T Current => CurrentValue;
     }
 }

@@ -1,32 +1,67 @@
-using System;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
-using ShardingCore.Core.VirtualRoutes.RouteTails;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
 using ShardingCore.Core.VirtualRoutes.TableRoutes.RoutingRuleEngine;
 using ShardingCore.Exceptions;
 using ShardingCore.Extensions;
 
 namespace ShardingCore.Core.VirtualRoutes
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Sunday, 22 August 2021 14:58:58
-* @Email: 326308290@qq.com
-*/
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Sunday, 22 August 2021 14:58:58
+    * @Email: 326308290@qq.com
+    */
     public class RouteTailFactory:IRouteTailFactory
     {
         public IRouteTail Create(string tail)
         {
-            return new SingleQueryRouteTail(tail);
+            return Create(tail, true);
         }
 
-        public IRouteTail Create(RouteResult routeResult)
+        public IRouteTail Create(string tail, bool cache)
         {
-            if (routeResult == null || routeResult.ReplaceTables.IsEmpty())
-                throw new ShardingCoreException("route result null or empty");
-            if (routeResult.ReplaceTables.Count == 1)
-                return new SingleQueryRouteTail(routeResult);
-            return new MultiQueryRouteTail(routeResult);
+            if (cache)
+            {
+                return new SingleQueryRouteTail(tail);
+            }
+            else
+            {
+                return new NoCacheSingleQueryRouteTail(tail);
+            }
+        }
+
+        public IRouteTail Create(TableRouteResult tableRouteResult)
+        {
+            return Create(tableRouteResult,true);
+        }
+
+        public IRouteTail Create(TableRouteResult tableRouteResult, bool cache)
+        {
+            if (tableRouteResult == null || tableRouteResult.ReplaceTables.IsEmpty())
+            {
+                if (cache)
+                {
+                    return new SingleQueryRouteTail(string.Empty);
+                }
+                else
+                {
+                    return new NoCacheSingleQueryRouteTail(string.Empty);
+                }
+            }
+
+            if (tableRouteResult.ReplaceTables.Count == 1)
+            {
+                if (cache)
+                {
+                    return new SingleQueryRouteTail(tableRouteResult);
+                }
+                else
+                {
+                    return new NoCacheSingleQueryRouteTail(tableRouteResult);
+                }
+            }
+            return new MultiQueryRouteTail(tableRouteResult);
         }
     }
 }

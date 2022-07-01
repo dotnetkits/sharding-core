@@ -8,12 +8,11 @@ namespace Sample.SqlServer3x.Domain.Entities
 * @Date: Thursday, 14 January 2021 15:36:43
 * @Email: 326308290@qq.com
 */
-    public class SysUserMod:IShardingTable
+    public class SysUserMod
     {
         /// <summary>
         /// 用户Id用于分表
         /// </summary>
-        [ShardingTableKey]
         public string Id { get; set; }
         /// <summary>
         /// 用户名称

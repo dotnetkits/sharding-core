@@ -1,45 +1,37 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
-using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.Core.VirtualRoutes.Abstractions;
+using ShardingCore.Core.VirtualRoutes.TableRoutes.RouteTails.Abstractions;
+using System;
+using ShardingCore.Core.VirtualDatabase.VirtualDataSources;
 
 namespace ShardingCore.Sharding.Abstractions
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Saturday, 14 August 2021 21:47:11
-* @Email: 326308290@qq.com
-*/
-    public interface IShardingDbContext
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Saturday, 14 August 2021 21:47:11
+    * @Email: 326308290@qq.com
+    */
+    public interface IShardingDbContext: IShardingTransaction
     {
-        Type ShardingDbContextType { get; }
-        /// <summary>
-        /// ��ʵ��DbContext ����
-        /// </summary>
-        Type ActualDbContextType {  get;}
         /// <summary>
         /// create DbContext
         /// </summary>
-        /// <param name="track">true not care dbcontext life, false need call dispose()</param>
+        /// <param name="dataSourceName">data source</param>
+        /// <param name="parallelQuery">true not care db context life, false need call dispose()</param>
         /// <param name="routeTail"></param>
         /// <returns></returns>
-        DbContext GetDbContext(bool track,IRouteTail routeTail);
+        DbContext GetDbContext(string dataSourceName, bool parallelQuery, IRouteTail routeTail);
+
         /// <summary>
-        /// ����ʵ�崴��db context
+        /// 创建通用的db context
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="entity"></param>
         /// <returns></returns>
         DbContext CreateGenericDbContext<T>(T entity) where T : class;
-        
 
-    }
+        IVirtualDataSource GetVirtualDataSource();
 
-    public interface IShardingTableDbContext<T> : IShardingDbContext where T : DbContext, IShardingTableDbContext
-    {
 
     }
 }

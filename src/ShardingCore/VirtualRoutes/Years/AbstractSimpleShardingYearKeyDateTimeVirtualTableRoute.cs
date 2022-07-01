@@ -1,31 +1,29 @@
+using ShardingCore.Core.VirtualRoutes;
+using ShardingCore.VirtualRoutes.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
-using ShardingCore.Core;
-using ShardingCore.Core.VirtualRoutes;
-using ShardingCore.Helpers;
-using ShardingCore.VirtualRoutes.Abstractions;
 
 namespace ShardingCore.VirtualRoutes.Years
 {
-/*
-* @Author: xjm
-* @Description:
-* @Date: Wednesday, 27 January 2021 13:00:57
-* @Email: 326308290@qq.com
-*/
-    public abstract class AbstractSimpleShardingYearKeyDateTimeVirtualTableRoute<T> : AbstractShardingTimeKeyDateTimeVirtualTableRoute<T> where T : class, IShardingTable
+    /*
+    * @Author: xjm
+    * @Description:
+    * @Date: Wednesday, 27 January 2021 13:00:57
+    * @Email: 326308290@qq.com
+    */
+    public abstract class AbstractSimpleShardingYearKeyDateTimeVirtualTableRoute<TEntity> : AbstractShardingTimeKeyDateTimeVirtualTableRoute<TEntity> where TEntity : class
     {
         public abstract DateTime GetBeginTime();
         public override List<string> GetAllTails()
         {
-            var beginTime = GetBeginTime();
+            var beginTime = GetBeginTime().Date;
          
             var tails=new List<string>();
             //提前创建表
-            var nowTimeStamp =beginTime.AddYears(1).Date;
+            var nowTimeStamp = DateTime.Now.Date;
             if (beginTime > nowTimeStamp)
-                throw new ArgumentException("起始时间不正确无法生成正确的表名");
+                throw new ArgumentException("begin time error");
             var currentTimeStamp = beginTime;
             while (currentTimeStamp <= nowTimeStamp)
             {
@@ -39,7 +37,7 @@ namespace ShardingCore.VirtualRoutes.Years
         {
             return $"{time:yyyy}";
         }
-        protected override Expression<Func<string, bool>> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
+        public override Func<string, bool> GetRouteToFilter(DateTime shardingKey, ShardingOperatorEnum shardingOperator)
         {
             var t = TimeFormatToTail(shardingKey);
             switch (shardingOperator)
@@ -49,7 +47,7 @@ namespace ShardingCore.VirtualRoutes.Years
                     return tail => String.Compare(tail, t, StringComparison.Ordinal) >= 0;
                 case ShardingOperatorEnum.LessThan:
                 {
-                    var currentYear =new DateTime(shardingKey.Year);
+                    var currentYear =new DateTime(shardingKey.Year,1,1);
                     //处于临界值 o=>o.time < [2021-01-01 00:00:00] 尾巴20210101不应该被返回
                     if (currentYear == shardingKey)
                         return tail => String.Compare(tail, t, StringComparison.Ordinal) < 0;
@@ -67,6 +65,18 @@ namespace ShardingCore.VirtualRoutes.Years
                 }
             }
         }
-
+        /// <summary>
+        /// 在几时执行创建对应的表
+        /// </summary>
+        /// <returns></returns>
+        public override string[] GetCronExpressions()
+        {
+            return new[]
+            {
+                "0 59 23 31 12 ?",
+                "0 0 0 1 1 ?",
+                "0 1 0 1 1 ?",
+            };
+        }
     }
 }

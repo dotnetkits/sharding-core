@@ -2,16 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using ChronusJob;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.OpenApi.Models;
+using Samples.AutoByDate.SqlServer.DbContexts;
+using Samples.AutoByDate.SqlServer.Shardings;
+using ShardingCore;
 
 namespace Samples.AutoByDate.SqlServer
 {
@@ -28,19 +31,28 @@ namespace Samples.AutoByDate.SqlServer
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
-            services.AddSwaggerGen(c => { c.SwaggerDoc("v1", new OpenApiInfo {Title = "Samples.AutoByDate.SqlServer", Version = "v1"}); });
-            //services.AddShardingSqlServer(o =>
-            //{
-            //    o.ConnectionString = "";
-            //    o.AddSharding<SysUserLogByDayVirtualTableRoute>();
-            //    o.UseShardingCoreConfig((provider, config) => 
-            //    {
-            //        //如果是development就判断并且新建数据库如果不存在的话
-            //        config.EnsureCreated = provider.GetService<IHostEnvironment>().IsDevelopment();
-            //        config.CreateShardingTableOnStart = true;
-            //    });
-            //});
-            services.AddChronusJob();
+            services.AddShardingDbContext<DefaultShardingDbContext>()
+                .AddEntityConfig(o =>
+                {
+                    o.CreateShardingTableOnStart = true;
+                    o.EnsureCreatedWithOutShardingTable = true;
+                    o.AddShardingTableRoute<SysUserLogByDayVirtualTableRoute>();
+                    o.AddShardingTableRoute<SysUserLog1ByDayVirtualTableRoute>();
+                    o.AddShardingTableRoute<TestLogWeekVirtualRoute>();
+                })
+                .AddConfig(sp =>
+                {
+                    sp.ConfigId = "c1";
+                    sp.UseShardingQuery((conStr, builder) =>
+                    {
+                        builder.UseSqlServer(conStr);
+                    });
+                    sp.UseShardingTransaction((connection, builder) =>
+                    {
+                        builder.UseSqlServer(connection).ReplaceService<IMigrationsModelDiffer, RemoveForeignKeyMigrationsModelDiffer>();
+                    });
+                    sp.AddDefaultDataSource("ds0", "Data Source=localhost;Initial Catalog=ShardingCoreDBz;Integrated Security=True;");
+                }).EnsureConfig();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -49,12 +61,9 @@ namespace Samples.AutoByDate.SqlServer
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
-                app.UseSwagger();
-                app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Samples.AutoByDate.SqlServer v1"));
             }
 
             app.UseShardingCore();
-            app.UseHttpsRedirection();
 
             app.UseRouting();
 

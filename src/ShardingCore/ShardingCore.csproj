@@ -1,20 +1,42 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>netstandard2.1</TargetFramework>
-        <Version>$(EFCORE5)</Version>
-        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-        <DefineConstants>TRACE;DEBUG;EFCORE5;</DefineConstants>
-        <LangVersion>8.0</LangVersion>
+        <TargetFramework>net6.0</TargetFramework>
+        <Version>$(EFCORE6)</Version>
+	    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+        <DefineConstants>TRACE;DEBUG;EFCORE6;</DefineConstants>
+        <LangVersion>latest</LangVersion>
+	    <RepositoryUrl>https://github.com/dotnetcore/sharding-core</RepositoryUrl>
+	    <PackageIcon>logo.png</PackageIcon>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <DocumentationFile>bin\Release\ShardingCore.xml</DocumentationFile>
+        <LangVersion>latest</LangVersion>
     </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+      <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <Compile Remove="Core\VirtualRoutes\RouteConditions\**" />
+      <Compile Remove="Sharding\Abstractions\MergeParseContexts\**" />
+      <EmbeddedResource Remove="Core\VirtualRoutes\RouteConditions\**" />
+      <EmbeddedResource Remove="Sharding\Abstractions\MergeParseContexts\**" />
+      <None Remove="Core\VirtualRoutes\RouteConditions\**" />
+      <None Remove="Sharding\Abstractions\MergeParseContexts\**" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Include="..\..\Logo\logo.png">
+        <Pack>True</Pack>
+        <PackagePath>\</PackagePath>
+      </None>
+    </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="5.0.7" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="5.0.7" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.6" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="6.0.6" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Sharding\Visitors\GroupBys" />
     </ItemGroup>
 </Project>
